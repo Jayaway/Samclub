@@ -1,0 +1,107 @@
+import { GroupBuy, Product } from '../types';
+
+export const mockGroups: GroupBuy[] = [
+  {
+    id: '1',
+    title: '宿舍楼联合大采购',
+    creator: '小明同学',
+    creatorAvatar: 'M',
+    currentAmount: 84.5,
+    targetAmount: 99,
+    deadline: '2h 30min',
+    participants: [
+      { id: '1', name: '小明同学', avatar: 'M', amount: 42.0 },
+      { id: '2', name: '宿舍长阿伟', avatar: 'W', amount: 28.5 },
+      { id: '3', name: '隔壁小花', avatar: 'H', amount: 14.0 },
+    ],
+    status: 'active',
+    pickupLocation: '3号宿舍楼门口',
+    hot: true,
+  },
+  {
+    id: '2',
+    title: '图书馆自习组团买零食',
+    creator: '学习委员Lisa',
+    creatorAvatar: 'L',
+    currentAmount: 55.0,
+    targetAmount: 99,
+    deadline: '5h 12min',
+    participants: [
+      { id: '1', name: '学习委员Lisa', avatar: 'L', amount: 30.0 },
+      { id: '2', name: '图书馆常驻客', avatar: 'T', amount: 25.0 },
+    ],
+    status: 'active',
+    pickupLocation: '图书馆一楼大厅',
+  },
+  {
+    id: '3',
+    title: '周末美食节提前囤货',
+    creator: '吃货大王',
+    creatorAvatar: 'E',
+    currentAmount: 99,
+    targetAmount: 99,
+    deadline: '已截止',
+    participants: [
+      { id: '1', name: '吃货大王', avatar: 'E', amount: 49.5 },
+      { id: '2', name: '同学A', avatar: 'A', amount: 25.0 },
+      { id: '3', name: '同学B', avatar: 'B', amount: 24.5 },
+    ],
+    status: 'completed',
+    pickupLocation: '食堂门口',
+  },
+];
+
+export const mockProducts: Product[] = [
+  {
+    id: '1',
+    name: '山姆有机草莓 500g',
+    unitPrice: 28.9,
+    category: '生鲜',
+    remaining: 3,
+    total: 5,
+    isFresh: true,
+    quantity: 0,
+  },
+  {
+    id: '2',
+    name: '山姆瑞士卷蛋糕',
+    unitPrice: 39.9,
+    category: '烘焙',
+    remaining: 4,
+    total: 4,
+    isFresh: false,
+    quantity: 0,
+  },
+  {
+    id: '3',
+    name: '山姆鲜牛奶 1L',
+    unitPrice: 14.9,
+    category: '乳品',
+    remaining: 2,
+    total: 6,
+    isFresh: true,
+    quantity: 0,
+  },
+  {
+    id: '4',
+    name: '山姆坚果混合装 750g',
+    unitPrice: 59.9,
+    category: '零食',
+    remaining: 5,
+    total: 5,
+    isFresh: false,
+    quantity: 0,
+  },
+  {
+    id: '5',
+    name: '山姆藤椒味薯片 270g',
+    unitPrice: 18.9,
+    category: '零食',
+    remaining: 6,
+    total: 8,
+    isFresh: false,
+    quantity: 0,
+  },
+];
+
+export const mockDetail = mockGroups[0];
