@@ -1,0 +1,1642 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>校园山姆拼单APP · 平台统一下单版</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+      background: #f2f4f8;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .page-title {
+      text-align: center;
+      font-size: 24px;
+      font-weight: 700;
+      color: #2c6e9e;
+      margin-bottom: 8px;
+    }
+
+    .page-subtitle {
+      text-align: center;
+      font-size: 14px;
+      color: #969799;
+      margin-bottom: 32px;
+    }
+
+    .grid-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 24px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .phone-mockup {
+      background: white;
+      border-radius: 32px;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+      width: 100%;
+      max-width: 375px;
+      margin: 0 auto;
+    }
+
+    /* Status Bar */
+    .status-bar {
+      background: #2c6e9e;
+      padding: 8px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: white;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .status-bar-left {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .status-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Screen Content */
+    .screen {
+      background: #f2f4f8;
+      min-height: 560px;
+      position: relative;
+    }
+
+    /* Header */
+    .header {
+      background: #2c6e9e;
+      padding: 12px 16px 16px;
+      color: white;
+    }
+
+    .header-title {
+      font-size: 18px;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .header-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+    }
+
+    .header-nav span {
+      font-size: 13px;
+      opacity: 0.9;
+    }
+
+    /* Tab Bar */
+    .tab-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: white;
+      display: flex;
+      justify-content: space-around;
+      padding: 8px 0;
+      border-top: 1px solid #ebedf0;
+    }
+
+    .tab-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-size: 10px;
+      color: #969799;
+      gap: 2px;
+    }
+
+    .tab-item.active {
+      color: #2c6e9e;
+    }
+
+    .tab-item i {
+      font-size: 20px;
+    }
+
+    /* Card List */
+    .card-list {
+      padding: 12px;
+    }
+
+    .group-card {
+      background: white;
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .status-badge {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .status-active {
+      background: #e6f4ff;
+      color: #2c6e9e;
+    }
+
+    .status-done {
+      background: #f3ffed;
+      color: #07c160;
+    }
+
+    .countdown {
+      font-size: 12px;
+      color: #969799;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 4px;
+    }
+
+    .card-sponsor {
+      font-size: 12px;
+      color: #969799;
+      margin-bottom: 12px;
+    }
+
+    /* Amount Highlight */
+    .amount-box {
+      text-align: center;
+      padding: 10px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+    }
+
+    .amount-box.normal {
+      background: linear-gradient(135deg, #fff5f5 0%, #fff 100%);
+    }
+
+    .amount-box.frozen {
+      background: linear-gradient(135deg, #e8f4fd 0%, #fff 100%);
+    }
+
+    .amount-box.free {
+      background: linear-gradient(135deg, #f0fff4 0%, #fff 100%);
+    }
+
+    .amount-num {
+      font-size: 26px;
+      font-weight: 700;
+    }
+
+    .amount-num.red {
+      color: #ee0a24;
+    }
+
+    .amount-num.green {
+      color: #07c160;
+    }
+
+    .amount-unit {
+      font-size: 14px;
+      color: #646566;
+      margin-left: 2px;
+    }
+
+    .amount-desc {
+      font-size: 12px;
+      color: #969799;
+      margin-top: 2px;
+    }
+
+    /* Progress Bar */
+    .progress-area {
+      margin-bottom: 12px;
+    }
+
+    .progress-bar {
+      height: 8px;
+      background: #ebedf0;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s;
+    }
+
+    .progress-fill.blue {
+      background: #2c6e9e;
+    }
+
+    .progress-fill.green {
+      background: #07c160;
+    }
+
+    .progress-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #969799;
+      margin-top: 4px;
+    }
+
+    /* Tags */
+    .card-tags {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .tag {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .tag-frozen {
+      background: #e8f4fd;
+      color: #2c6e9e;
+    }
+
+    /* Card Footer */
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 10px;
+      border-top: 1px solid #f0f0f0;
+    }
+
+    .card-meta {
+      font-size: 12px;
+      color: #969799;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .btn {
+      padding: 6px 14px;
+      border-radius: 16px;
+      font-size: 12px;
+      font-weight: 500;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background: #2c6e9e;
+      color: white;
+    }
+
+    .btn-orange {
+      background: #f5b042;
+      color: white;
+    }
+
+    .btn-outline {
+      background: white;
+      color: #2c6e9e;
+      border: 1px solid #2c6e9e;
+    }
+
+    /* Form Page */
+    .form-content {
+      padding: 16px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      font-size: 13px;
+      color: #646566;
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ebedf0;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #fafafa;
+    }
+
+    .form-row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .form-row .form-group {
+      flex: 1;
+    }
+
+    .product-list {
+      background: white;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .product-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .product-item:last-child {
+      border-bottom: none;
+    }
+
+    .product-name {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .product-meta {
+      font-size: 11px;
+      color: #969799;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .product-price {
+      font-size: 14px;
+      font-weight: 600;
+      color: #2c6e9e;
+    }
+
+    .add-product-btn {
+      width: 100%;
+      padding: 12px;
+      border: 2px dashed #dcdee0;
+      border-radius: 10px;
+      background: white;
+      color: #969799;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .submit-area {
+      padding: 16px;
+      background: white;
+      border-radius: 16px;
+      margin-top: 12px;
+    }
+
+    .submit-btn {
+      width: 100%;
+      padding: 14px;
+      background: #2c6e9e;
+      color: white;
+      border: none;
+      border-radius: 24px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* Detail Page */
+    .detail-header {
+      background: white;
+      padding: 16px;
+      margin-bottom: 8px;
+    }
+
+    .detail-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 8px;
+    }
+
+    .detail-meta {
+      font-size: 13px;
+      color: #969799;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .detail-section {
+      background: white;
+      padding: 14px 16px;
+      margin-bottom: 8px;
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .product-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #f5f5f5;
+    }
+
+    .product-row:last-child {
+      border-bottom: none;
+    }
+
+    .product-info h4 {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 2px;
+    }
+
+    .product-info span {
+      font-size: 12px;
+      color: #969799;
+    }
+
+    .product-right {
+      text-align: right;
+    }
+
+    .product-right .price {
+      font-size: 14px;
+      font-weight: 600;
+      color: #2c6e9e;
+    }
+
+    .product-right .qty {
+      font-size: 11px;
+      color: #969799;
+    }
+
+    /* QR Code */
+    .qr-code {
+      background: #f5f5f5;
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+      margin-top: 12px;
+    }
+
+    .qr-box {
+      width: 120px;
+      height: 120px;
+      background: #dcdee0;
+      border-radius: 8px;
+      margin: 0 auto 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .qr-box i {
+      font-size: 48px;
+      color: #969799;
+    }
+
+    .qr-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #646566;
+    }
+
+    .qr-hint {
+      font-size: 11px;
+      color: #969799;
+      margin-top: 4px;
+    }
+
+    /* Member List */
+    .member-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid #f5f5f5;
+    }
+
+    .member-item:last-child {
+      border-bottom: none;
+    }
+
+    .member-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .member-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #2c6e9e;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .member-name {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .member-role {
+      font-size: 10px;
+      color: #f5b042;
+    }
+
+    .member-amount {
+      text-align: right;
+    }
+
+    .member-amount .amount {
+      font-size: 15px;
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+
+    .member-amount .detail {
+      font-size: 10px;
+      color: #969799;
+    }
+
+    /* Cost Breakdown */
+    .cost-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      font-size: 13px;
+    }
+
+    .cost-row.total {
+      border-top: 1px solid #ebedf0;
+      margin-top: 8px;
+      padding-top: 12px;
+      font-weight: 600;
+    }
+
+    .cost-row.total .amount {
+      color: #2c6e9e;
+      font-size: 16px;
+    }
+
+    /* Shop Page */
+    .shop-header {
+      background: white;
+      padding: 14px 16px;
+      margin-bottom: 8px;
+    }
+
+    .shop-product {
+      background: white;
+      padding: 14px 16px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .shop-product-info h4 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .shop-product-info .tags {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+
+    .shop-product-info .price {
+      font-size: 16px;
+      font-weight: 700;
+      color: #2c6e9e;
+    }
+
+    .shop-product-info .price small {
+      font-size: 12px;
+      font-weight: 400;
+      color: #969799;
+    }
+
+    .qty-control {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .qty-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid #dcdee0;
+      background: white;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .qty-num {
+      font-size: 16px;
+      font-weight: 600;
+      min-width: 24px;
+      text-align: center;
+    }
+
+    .cart-summary {
+      position: absolute;
+      bottom: 70px;
+      left: 12px;
+      right: 12px;
+      background: white;
+      border-radius: 16px;
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    .cart-info {
+      font-size: 13px;
+      color: #646566;
+    }
+
+    .cart-info .total {
+      font-size: 18px;
+      font-weight: 700;
+      color: #2c6e9e;
+    }
+
+    /* My Orders Page */
+    .tab-header {
+      display: flex;
+      background: white;
+      padding: 12px 16px;
+      gap: 24px;
+      border-bottom: 1px solid #ebedf0;
+    }
+
+    .tab-header span {
+      font-size: 14px;
+      color: #969799;
+      padding-bottom: 8px;
+      cursor: pointer;
+    }
+
+    .tab-header span.active {
+      color: #2c6e9e;
+      font-weight: 600;
+      border-bottom: 2px solid #2c6e9e;
+    }
+
+    .order-card {
+      background: white;
+      border-radius: 12px;
+      padding: 14px;
+      margin: 12px;
+    }
+
+    .order-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .order-title {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .order-status {
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .order-status.unpaid {
+      color: #ee0a24;
+    }
+
+    .order-status.paid {
+      color: #07c160;
+    }
+
+    .order-status.pending {
+      color: #f5b042;
+    }
+
+    .order-info {
+      font-size: 13px;
+      color: #646566;
+      display: flex;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .order-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 12px;
+      border-top: 1px solid #f0f0f0;
+    }
+
+    .order-amount {
+      font-size: 16px;
+      font-weight: 700;
+      color: #2c6e9e;
+    }
+
+    /* Profile Page */
+    .profile-header {
+      background: #2c6e9e;
+      padding: 24px 16px;
+      color: white;
+      text-align: center;
+    }
+
+    .profile-avatar {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      margin: 0 auto 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+    }
+
+    .profile-name {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .profile-id {
+      font-size: 13px;
+      opacity: 0.8;
+    }
+
+    .profile-menu {
+      background: white;
+      margin: 12px;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .menu-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px;
+      border-bottom: 1px solid #f5f5f5;
+    }
+
+    .menu-item:last-child {
+      border-bottom: none;
+    }
+
+    .menu-item-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .menu-item-left i {
+      font-size: 18px;
+      color: #2c6e9e;
+    }
+
+    .menu-item-left span {
+      font-size: 14px;
+      color: #1a1a1a;
+    }
+
+    .menu-item i.fa-chevron-right {
+      font-size: 12px;
+      color: #dcdee0;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 48px 24px;
+    }
+
+    .empty-state i {
+      font-size: 48px;
+      color: #dcdee0;
+      margin-bottom: 12px;
+    }
+
+    .empty-state p {
+      font-size: 14px;
+      color: #969799;
+      margin-bottom: 16px;
+    }
+
+    /* Floating Button */
+    .fab {
+      position: absolute;
+      right: 16px;
+      bottom: 80px;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: #f5b042;
+      color: white;
+      border: none;
+      font-size: 24px;
+      box-shadow: 0 4px 12px rgba(245, 176, 66, 0.4);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Section Label */
+    .section-label {
+      font-size: 12px;
+      color: #969799;
+      padding: 8px 16px 4px;
+    }
+  </style>
+</head>
+<body>
+
+<h1 class="page-title">校园山姆拼单APP</h1>
+<p class="page-subtitle">平台统一下单版 · 所有成员平等分摊费用</p>
+
+<div class="grid-container">
+
+  <!-- ==================== 1. 拼单广场 ==================== -->
+  <div class="phone-mockup">
+    <div class="status-bar">
+      <div class="status-bar-left">
+        <span>9:41</span>
+      </div>
+      <div class="status-bar-right">
+        <i class="fas fa-signal"></i>
+        <i class="fas fa-wifi"></i>
+        <i class="fas fa-battery-full"></i>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="header">
+        <div class="header-title">拼单广场</div>
+      </div>
+
+      <div class="card-list">
+        <!-- 卡片1：未满99，有生鲜 -->
+        <div class="group-card">
+          <div class="card-top">
+            <span class="status-badge status-active">进行中</span>
+            <span class="countdown"><i class="far fa-clock"></i> 4小时32分</span>
+          </div>
+          <div class="card-title">山姆瑞士卷拼单 🧁</div>
+          <div class="card-sponsor">发起人：李明</div>
+
+          <div class="amount-box normal">
+            <span class="amount-num red">14.5</span>
+            <span class="amount-unit">元</span>
+            <div class="amount-desc">即可免运费（差14.5元）</div>
+          </div>
+
+          <div class="progress-area">
+            <div class="progress-bar">
+              <div class="progress-fill blue" style="width: 85%;"></div>
+            </div>
+            <div class="progress-info">
+              <span>已凑 ¥84.5 / ¥99</span>
+              <span>85%</span>
+            </div>
+          </div>
+
+          <div class="card-tags">
+            <span class="tag tag-frozen"><i class="fas fa-snowflake"></i> 含生鲜</span>
+          </div>
+
+          <div class="card-footer">
+            <span class="card-meta"><i class="fas fa-users"></i> 3人</span>
+            <span class="card-meta"><i class="fas fa-map-marker-alt"></i> 1号楼</span>
+            <button class="btn btn-primary">去凑单</button>
+          </div>
+        </div>
+
+        <!-- 卡片2：已满99，无生鲜 -->
+        <div class="group-card">
+          <div class="card-top">
+            <span class="status-badge status-active">进行中</span>
+            <span class="countdown"><i class="far fa-clock"></i> 2小时后</span>
+          </div>
+          <div class="card-title">山姆牛肉卷拼单 🥩</div>
+          <div class="card-sponsor">发起人：王芳</div>
+
+          <div class="amount-box free">
+            <span class="amount-num green">已免运费</span>
+            <div class="amount-desc">还差0元，已达标</div>
+          </div>
+
+          <div class="progress-area">
+            <div class="progress-bar">
+              <div class="progress-fill green" style="width: 100%;"></div>
+            </div>
+            <div class="progress-info">
+              <span>已凑 ¥128 / ¥99</span>
+              <span>100%+</span>
+            </div>
+          </div>
+
+          <div class="card-footer">
+            <span class="card-meta"><i class="fas fa-users"></i> 5人</span>
+            <span class="card-meta"><i class="fas fa-map-marker-alt"></i> 3号楼</span>
+            <button class="btn btn-orange">查看详情</button>
+          </div>
+        </div>
+
+        <!-- 卡片3：未满99，无生鲜 -->
+        <div class="group-card">
+          <div class="card-top">
+            <span class="status-badge status-done">已截单</span>
+            <span class="countdown"><i class="far fa-clock"></i> 已截止</span>
+          </div>
+          <div class="card-title">山姆麻薯拼单</div>
+          <div class="card-sponsor">发起人：张三</div>
+
+          <div class="amount-box free">
+            <span class="amount-num green">¥102</span>
+            <div class="amount-desc">已结束，待取货</div>
+          </div>
+
+          <div class="progress-area">
+            <div class="progress-bar">
+              <div class="progress-fill green" style="width: 100%;"></div>
+            </div>
+            <div class="progress-info">
+              <span>已凑 ¥102 / ¥99</span>
+              <span>100%</span>
+            </div>
+          </div>
+
+          <div class="card-footer">
+            <span class="card-meta"><i class="fas fa-users"></i> 4人</span>
+            <span class="card-meta"><i class="fas fa-map-marker-alt"></i> 2号楼</span>
+            <button class="btn btn-outline">查看详情</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-bar">
+        <div class="tab-item active">
+          <i class="fas fa-store"></i>
+          <span>广场</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-plus-circle"></i>
+          <span>创建</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-list"></i>
+          <span>我的</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-user"></i>
+          <span>我的</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 2. 创建拼单页 ==================== -->
+  <div class="phone-mockup">
+    <div class="status-bar">
+      <div class="status-bar-left">
+        <span>9:41</span>
+      </div>
+      <div class="status-bar-right">
+        <i class="fas fa-signal"></i>
+        <i class="fas fa-wifi"></i>
+        <i class="fas fa-battery-full"></i>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="header">
+        <div class="header-title">发起拼单</div>
+      </div>
+
+      <div class="form-content">
+        <div class="form-group">
+          <label class="form-label">拼单标题</label>
+          <input type="text" class="form-input" placeholder="如：山姆瑞士卷拼单" value="山姆瑞士卷+牛肉卷拼单">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">取货地点</label>
+          <input type="text" class="form-input" placeholder="如：1号楼宿舍门口" value="1号楼大厅">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">截止时间</label>
+          <input type="text" class="form-input" placeholder="选择截止时间" value="今天 18:00">
+        </div>
+
+        <p class="section-label">商品清单</p>
+
+        <div class="product-list">
+          <div class="product-item">
+            <div>
+              <div class="product-name">瑞士卷（12个装）</div>
+              <div class="product-meta"><i class="fas fa-snowflake" style="color:#2c6e9e"></i> 生鲜商品</div>
+            </div>
+            <div>
+              <div class="product-price">¥128</div>
+            </div>
+          </div>
+          <div class="product-item">
+            <div>
+              <div class="product-name">牛肉卷（500g）</div>
+              <div class="product-meta"><i class="fas fa-snowflake" style="color:#2c6e9e"></i> 生鲜商品</div>
+            </div>
+            <div>
+              <div class="product-price">¥68</div>
+            </div>
+          </div>
+        </div>
+
+        <button class="add-product-btn">
+          <i class="fas fa-plus"></i> 添加商品
+        </button>
+
+        <div class="submit-area">
+          <div class="cost-row">
+            <span>商品总价</span>
+            <span>¥196</span>
+          </div>
+          <div class="cost-row">
+            <span>包装费</span>
+            <span>+ ¥1.00</span>
+          </div>
+          <div class="cost-row">
+            <span>生鲜附加费 <small style="color:#969799">(❄️含生鲜)</small></span>
+            <span>+ ¥2.00</span>
+          </div>
+          <div class="cost-row">
+            <span>平台酬劳</span>
+            <span>+ ¥0.50</span>
+          </div>
+          <div class="cost-row total">
+            <span>预估总费用</span>
+            <span class="amount">¥199.50</span>
+          </div>
+          <p style="font-size:11px;color:#07c160;margin-top:8px;text-align:center;">
+            <i class="fas fa-check-circle"></i> 已满99元，免运费！
+          </p>
+          <button class="submit-btn">发布拼单</button>
+        </div>
+      </div>
+
+      <div class="tab-bar">
+        <div class="tab-item">
+          <i class="fas fa-store"></i>
+          <span>广场</span>
+        </div>
+        <div class="tab-item active">
+          <i class="fas fa-plus-circle"></i>
+          <span>创建</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-list"></i>
+          <span>我的</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-user"></i>
+          <span>我的</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 3. 拼单详情页 ==================== -->
+  <div class="phone-mockup">
+    <div class="status-bar">
+      <div class="status-bar-left">
+        <span>9:41</span>
+      </div>
+      <div class="status-bar-right">
+        <i class="fas fa-signal"></i>
+        <i class="fas fa-wifi"></i>
+        <i class="fas fa-battery-full"></i>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="header">
+        <div class="header-title">拼单详情</div>
+      </div>
+
+      <div style="height:8px;"></div>
+
+      <div class="detail-header">
+        <div class="detail-title">山姆瑞士卷拼单 🧁</div>
+        <div class="detail-meta">
+          <span><i class="fas fa-user"></i> 发起人：李明</span>
+          <span><i class="fas fa-map-marker-alt"></i> 1号楼大厅</span>
+        </div>
+        <div class="progress-bar" style="height:10px;">
+          <div class="progress-fill blue" style="width:85%;"></div>
+        </div>
+        <div class="progress-info" style="margin-top:6px;">
+          <span>已凑 ¥84.5 / ¥99</span>
+          <span style="color:#07c160;">还差 ¥14.5 免运费</span>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <div class="section-title">
+          <span>商品明细</span>
+          <span style="font-weight:400;color:#969799;font-size:12px;">点击增减数量</span>
+        </div>
+        <div class="product-row">
+          <div class="product-info">
+            <h4>瑞士卷（12个装）<i class="fas fa-snowflake" style="color:#2c6e9e;font-size:10px;"></i></h4>
+            <span>¥128 / 12个 · 可拆卖</span>
+          </div>
+          <div class="product-right">
+            <div class="price">¥10.67/个</div>
+            <div class="qty">已购3个</div>
+          </div>
+        </div>
+        <div class="product-row">
+          <div class="product-info">
+            <h4>牛肉卷（500g）</h4>
+            <span>¥68 / 份</span>
+          </div>
+          <div class="product-right">
+            <div class="price">¥68</div>
+            <div class="qty">已购1份</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <div class="section-title">
+          <span>成员应付明细</span>
+          <span style="font-weight:400;color:#969799;font-size:12px;">费用均摊说明</span>
+        </div>
+
+        <div class="member-item">
+          <div class="member-info">
+            <div class="member-avatar">李</div>
+            <div>
+              <div class="member-name">李明 <span class="member-role">发起人</span></div>
+            </div>
+          </div>
+          <div class="member-amount">
+            <div class="amount">¥33.75</div>
+            <div class="detail">商品¥32 + 分摊¥1.75</div>
+          </div>
+        </div>
+
+        <div class="member-item">
+          <div class="member-info">
+            <div class="member-avatar" style="background:#f5b042;">陈</div>
+            <div>
+              <div class="member-name">陈小文</div>
+            </div>
+          </div>
+          <div class="member-amount">
+            <div class="amount">¥37.85</div>
+            <div class="detail">商品¥36 + 分摊¥1.85</div>
+          </div>
+        </div>
+
+        <div class="member-item">
+          <div class="member-info">
+            <div class="member-avatar" style="background:#07c160;">周</div>
+            <div>
+              <div class="member-name">周小红</div>
+            </div>
+          </div>
+          <div class="member-amount">
+            <div class="amount">¥31.90</div>
+            <div class="detail">商品¥30.50 + 分摊¥1.40</div>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;padding:10px;background:#f9f9f9;border-radius:8px;">
+          <div class="cost-row">
+            <span>商品总额</span>
+            <span>¥98.50</span>
+          </div>
+          <div class="cost-row">
+            <span>包装费（1元，所有人分摊）</span>
+            <span>+ ¥1.00</span>
+          </div>
+          <div class="cost-row">
+            <span>生鲜附加费（2元，含❄️生鲜）</span>
+            <span>+ ¥2.00</span>
+          </div>
+          <div class="cost-row">
+            <span>平台酬劳（0.5元，所有人分摊）</span>
+            <span>+ ¥0.50</span>
+          </div>
+          <div class="cost-row total">
+            <span>费用合计</span>
+            <span class="amount">¥102.00</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <div class="section-title">
+          <span><i class="fas fa-qrcode" style="color:#2c6e9e;"></i> 平台收款码</span>
+        </div>
+        <div class="qr-code">
+          <div class="qr-box">
+            <i class="fas fa-qrcode"></i>
+          </div>
+          <div class="qr-label">平台收款码（运营方）</div>
+          <div class="qr-hint">扫码支付后上传凭证</div>
+        </div>
+      </div>
+
+      <div style="height:16px;"></div>
+
+      <div class="tab-bar">
+        <div class="tab-item">
+          <i class="fas fa-store"></i>
+          <span>广场</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-plus-circle"></i>
+          <span>创建</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-list"></i>
+          <span>我的</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-user"></i>
+          <span>我的</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 4. 加入拼单/选购页 ==================== -->
+  <div class="phone-mockup">
+    <div class="status-bar">
+      <div class="status-bar-left">
+        <span>9:41</span>
+      </div>
+      <div class="status-bar-right">
+        <i class="fas fa-signal"></i>
+        <i class="fas fa-wifi"></i>
+        <i class="fas fa-battery-full"></i>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="header">
+        <div class="header-title">加入拼单</div>
+      </div>
+
+      <div class="shop-header">
+        <div class="detail-title" style="font-size:16px;margin-bottom:4px;">山姆瑞士卷拼单</div>
+        <div style="font-size:12px;color:#969799;">
+          <i class="fas fa-snowflake" style="color:#2c6e9e;"></i> 含生鲜商品 · 当前凑单 ¥84.5 / ¥99
+        </div>
+      </div>
+
+      <div class="section-label">选择商品</div>
+
+      <div class="shop-product">
+        <div class="shop-product-info">
+          <h4>瑞士卷（12个装）</h4>
+          <div class="tags">
+            <span class="tag tag-frozen"><i class="fas fa-snowflake"></i> 生鲜</span>
+            <span style="font-size:11px;color:#969799;">可拆卖</span>
+          </div>
+          <div class="price">¥10.67 <small>/个</small></div>
+        </div>
+        <div class="qty-control">
+          <button class="qty-btn">−</button>
+          <span class="qty-num">2</span>
+          <button class="qty-btn">+</button>
+        </div>
+      </div>
+
+      <div class="shop-product">
+        <div class="shop-product-info">
+          <h4>牛肉卷（500g）</h4>
+          <div class="tags">
+            <span class="tag tag-frozen"><i class="fas fa-snowflake"></i> 生鲜</span>
+          </div>
+          <div class="price">¥68 <small>/份</div>
+        </div>
+        <div class="qty-control">
+          <button class="qty-btn">−</button>
+          <span class="qty-num">0</span>
+          <button class="qty-btn">+</button>
+        </div>
+      </div>
+
+      <div class="shop-product">
+        <div class="shop-product-info">
+          <h4>青柠汁（1L装）</h4>
+          <div class="tags">
+            <span style="font-size:11px;color:#969799;">普通商品</span>
+          </div>
+          <div class="price">¥28 <small>/瓶</small></div>
+        </div>
+        <div class="qty-control">
+          <button class="qty-btn">−</button>
+          <span class="qty-num">1</span>
+          <button class="qty-btn">+</button>
+        </div>
+      </div>
+
+      <div class="shop-product">
+        <div class="shop-product-info">
+          <h4>冻虾（300g）</h4>
+          <div class="tags">
+            <span class="tag tag-frozen"><i class="fas fa-snowflake"></i> 生鲜</span>
+            <span style="font-size:11px;color:#969799;">可拆卖</span>
+          </div>
+          <div class="price">¥45 <small>/盒</small></div>
+        </div>
+        <div class="qty-control">
+          <button class="qty-btn">−</button>
+          <span class="qty-num">0</span>
+          <button class="qty-btn">+</button>
+        </div>
+      </div>
+
+      <div class="cart-summary">
+        <div class="cart-info">
+          <div>已选 3 件商品</div>
+          <div>应付总额：<span class="total">¥49.34</span></div>
+        </div>
+        <button class="btn btn-primary" style="padding:10px 24px;">确认加入</button>
+      </div>
+
+      <div class="tab-bar">
+        <div class="tab-item">
+          <i class="fas fa-store"></i>
+          <span>广场</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-plus-circle"></i>
+          <span>创建</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-list"></i>
+          <span>我的</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-user"></i>
+          <span>我的</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 5. 我的拼单页 ==================== -->
+  <div class="phone-mockup">
+    <div class="status-bar">
+      <div class="status-bar-left">
+        <span>9:41</span>
+      </div>
+      <div class="status-bar-right">
+        <i class="fas fa-signal"></i>
+        <i class="fas fa-wifi"></i>
+        <i class="fas fa-battery-full"></i>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="header">
+        <div class="header-title">我的拼单</div>
+      </div>
+
+      <div class="tab-header">
+        <span class="active">我发起的 (2)</span>
+        <span>我参与的 (3)</span>
+      </div>
+
+      <!-- 我发起的 -->
+      <div class="order-card">
+        <div class="order-header">
+          <span class="order-title">山姆瑞士卷拼单 🧁</span>
+          <span class="order-status pending">待取货</span>
+        </div>
+        <div class="order-info">
+          <span><i class="fas fa-users"></i> 4人</span>
+          <span><i class="fas fa-clock"></i> 明天取货</span>
+          <span><i class="fas fa-map-marker-alt"></i> 1号楼</span>
+        </div>
+        <div style="font-size:12px;color:#646566;margin-bottom:12px;">
+          <i class="fas fa-snowflake" style="color:#2c6e9e;"></i> 含生鲜商品 · 已收齐款项
+        </div>
+        <div class="order-footer">
+          <span class="order-amount">¥136.50</span>
+          <button class="btn btn-orange" style="font-size:12px;padding:6px 14px;">管理订单</button>
+        </div>
+      </div>
+
+      <div class="order-card">
+        <div class="order-header">
+          <span class="order-title">山姆牛肉卷拼单</span>
+          <span class="order-status unpaid">待付款 2人</span>
+        </div>
+        <div class="order-info">
+          <span><i class="fas fa-users"></i> 3人</span>
+          <span><i class="fas fa-clock"></i> 2小时后截止</span>
+        </div>
+        <div class="order-footer">
+          <span class="order-amount">¥102.00</span>
+          <button class="btn btn-primary" style="font-size:12px;padding:6px 14px;">提醒付款</button>
+        </div>
+      </div>
+
+      <!-- 费用说明 -->
+      <div style="margin:12px;padding:12px;background:#f9f9f9;border-radius:8px;font-size:11px;color:#969799;">
+        <div><i class="fas fa-info-circle"></i> 费用分摊说明</div>
+        <div style="margin-top:4px;">所有成员平等分摊：包装费1元 + 生鲜附加费2元（如有）+ 平台酬劳0.5元</div>
+        <div style="margin-top:2px;">示例：你购¥50商品，总费用¥100，分摊=(1+2+0.5)×50/100=¥1.75</div>
+      </div>
+
+      <div class="tab-bar">
+        <div class="tab-item">
+          <i class="fas fa-store"></i>
+          <span>广场</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-plus-circle"></i>
+          <span>创建</span>
+        </div>
+        <div class="tab-item active">
+          <i class="fas fa-list"></i>
+          <span>我的</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-user"></i>
+          <span>我的</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 6. 个人中心页 ==================== -->
+  <div class="phone-mockup">
+    <div class="status-bar" style="background:transparent;"></div>
+
+    <div class="screen">
+      <div class="profile-header">
+        <div class="profile-avatar">
+          <i class="fas fa-user"></i>
+        </div>
+        <div class="profile-name">陈小文</div>
+        <div class="profile-id">学号：2024001234</div>
+      </div>
+
+      <div class="profile-menu">
+        <div class="menu-item">
+          <div class="menu-item-left">
+            <i class="fas fa-receipt"></i>
+            <span>我的付款记录</span>
+          </div>
+          <i class="fas fa-chevron-right"></i>
+        </div>
+        <div class="menu-item">
+          <div class="menu-item-left">
+            <i class="fas fa-list-alt"></i>
+            <span>我的拼单记录</span>
+          </div>
+          <i class="fas fa-chevron-right"></i>
+        </div>
+        <div class="menu-item">
+          <div class="menu-item-left">
+            <i class="fas fa-history"></i>
+            <span>历史参与</span>
+          </div>
+          <i class="fas fa-chevron-right"></i>
+        </div>
+      </div>
+
+      <div class="profile-menu">
+        <div class="menu-item">
+          <div class="menu-item-left">
+            <i class="fas fa-headset"></i>
+            <span>联系客服</span>
+          </div>
+          <i class="fas fa-chevron-right"></i>
+        </div>
+        <div class="menu-item">
+          <div class="menu-item-left">
+            <i class="fas fa-question-circle"></i>
+            <span>帮助与反馈</span>
+          </div>
+          <i class="fas fa-chevron-right"></i>
+        </div>
+        <div class="menu-item">
+          <div class="menu-item-left">
+            <i class="fas fa-cog"></i>
+            <span>设置</span>
+          </div>
+          <i class="fas fa-chevron-right"></i>
+        </div>
+      </div>
+
+      <div style="padding:24px;text-align:center;">
+        <div style="font-size:12px;color:#969799;margin-bottom:8px;">校园山姆拼单APP</div>
+        <div style="font-size:11px;color:#dcdee0;">平台统一下单版 v1.0</div>
+      </div>
+
+      <div class="tab-bar">
+        <div class="tab-item">
+          <i class="fas fa-store"></i>
+          <span>广场</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-plus-circle"></i>
+          <span>创建</span>
+        </div>
+        <div class="tab-item">
+          <i class="fas fa-list"></i>
+          <span>我的</span>
+        </div>
+        <div class="tab-item active">
+          <i class="fas fa-user"></i>
+          <span>我的</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
