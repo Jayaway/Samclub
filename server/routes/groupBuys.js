@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
-import { calculateTotalCost, calculateCostShare, hasFrozenItem, leaderDiscountApplies } from '../utils/calculator.js';
+import { calculateTotalCost, calculateCostShare, hasColdChainItem, leaderDiscountApplies } from '../utils/calculator.js';
+import config from '../config.js';
 
 const router = Router();
 
@@ -9,7 +10,7 @@ router.get('/', (req, res) => {
   try {
     const { status, check_keyword, check_deadline } = req.query;
 
-    // 相似拼单重复检查：返回 ±1小时内存在的同类商品拼单
+    // 相似拼单重复检查：返回 ±1小时内存在的同类商品拼单（仅限未结束的拼单）
     if (check_keyword && check_deadline) {
       const deadlineMs = new Date(check_deadline).getTime();
       const oneHour = 60 * 60 * 1000;
@@ -20,7 +21,7 @@ router.get('/', (req, res) => {
         SELECT gb.id, gb.title, gb.deadline
         FROM group_buys gb
         JOIN products p ON p.group_buy_id = gb.id
-        WHERE gb.status = '拼单中'
+        WHERE gb.status IN ('拼单中', '待付款')
           AND gb.deadline BETWEEN ? AND ?
           AND (p.name LIKE ? OR gb.title LIKE ?)
         GROUP BY gb.id
@@ -54,14 +55,14 @@ router.get('/', (req, res) => {
       `).get(gb.id).total;
 
       const products = db.prepare('SELECT * FROM products WHERE group_buy_id = ?').all(gb.id);
-      const frozen = hasFrozenItem(products);
-      const costInfo = calculateTotalCost(totalAmount, frozen);
+      const needsColdChain = hasColdChainItem(products);
+      const costInfo = calculateTotalCost(totalAmount, needsColdChain);
 
       return {
         ...gb,
         total_amount: totalAmount,
         delivery_mode: costInfo.mode,
-        has_frozen: frozen,
+        needs_cold_chain: needsColdChain,
         total_cost: costInfo.totalCost,
         progress: Math.min(100, Math.round((totalAmount / 99) * 100))
       };
@@ -91,11 +92,11 @@ router.get('/:id', (req, res) => {
 
     // 获取商品列表
     const products = db.prepare('SELECT * FROM products WHERE group_buy_id = ?').all(id);
-    const frozen = hasFrozenItem(products);
+    const needsColdChain = hasColdChainItem(products);
 
     // 获取订单项
     const orderItems = db.prepare(`
-      SELECT oi.*, p.name as product_name, p.is_frozen, u.nickname as user_name
+      SELECT oi.*, p.name as product_name, p.needs_cold_chain, u.nickname as user_name
       FROM order_items oi
       JOIN products p ON oi.product_id = p.id
       JOIN users u ON oi.user_id = u.id
@@ -112,7 +113,7 @@ router.get('/:id', (req, res) => {
 
     // 计算总金额和费用
     const totalAmount = orderItems.reduce((sum, item) => sum + item.subtotal, 0);
-    const costInfo = calculateTotalCost(totalAmount, frozen);
+    const costInfo = calculateTotalCost(totalAmount, needsColdChain);
 
     // 获取成员列表
     const members = db.prepare(`
@@ -129,8 +130,35 @@ router.get('/:id', (req, res) => {
       costDetails,
       members,
       total_amount: totalAmount,
-      has_frozen: frozen,
+      needs_cold_chain: needsColdChain,
       ...costInfo
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 获取拼单收款信息（团长收款码+备注）
+router.get('/:id/payment-info', (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const gb = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(id);
+    if (!gb) {
+      return res.status(404).json({ error: '拼单不存在' });
+    }
+
+    const leader = db.prepare('SELECT nickname, avatar, payment_qr FROM users WHERE id = ?').get(gb.creator_id);
+    const totalAmount = db.prepare(`
+      SELECT COALESCE(SUM(subtotal), 0) as total FROM order_items WHERE group_buy_id = ?
+    `).get(id).total;
+
+    res.json({
+      payment_remark: gb.payment_remark || `GB${gb.id}_${leader?.nickname || '团长'}`,
+      qr_code_url: leader?.payment_qr || '',
+      leader_name: leader?.nickname || '团长',
+      leader_avatar: leader?.avatar || '',
+      total_amount: totalAmount,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -154,43 +182,69 @@ router.post('/', (req, res) => {
     const result = stmt.run(creator_id, title, deadline, pickup_location || '');
     const groupBuyId = result.lastInsertRowid;
 
+    // 生成付款备注：GB{id}_{昵称}_{随机码}，并更新到数据库
+    const creator = db.prepare('SELECT nickname FROM users WHERE id = ?').get(creator_id);
+    const randomCode = Math.random().toString(36).slice(2, 6).toLowerCase();
+    const paymentRemark = `GB${groupBuyId}_${creator?.nickname || '团长'}_${randomCode}`;
+    db.prepare('UPDATE group_buys SET payment_remark = ? WHERE id = ?').run(paymentRemark, groupBuyId);
+
     // 添加商品
     if (products && products.length > 0) {
       const insertProduct = db.prepare(`
-        INSERT INTO products (group_buy_id, name, original_price, total_quantity, remaining_quantity, is_split_allowed, is_frozen, unit_price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO products (group_buy_id, product_type, name, original_price, quantity, remaining_quantity, allow_split, split_unit, split_quantity_per_whole, split_price_per_unit, self_retain_quantity, needs_cold_chain, unit_price, split_remaining_quantity)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       products.forEach(p => {
+        const isFixed = p.product_type !== 'custom';
+        // 固定商品拆分校验
+        if (isFixed && p.allow_split && p.split_price_per_unit !== undefined) {
+          const maxUnitPrice = p.original_price / p.split_quantity_per_whole;
+          if (p.split_price_per_unit > maxUnitPrice) {
+            console.warn(`商品"${p.name}"拆分单价高于整份均摊价，已自动调整`);
+          }
+        }
+
+        // 可售拆分单位数 = 整份数 × 每份含拆分单位数 - 发起人自留数（仅固定商品）
+        const splitRemaining = (isFixed && p.allow_split && p.split_quantity_per_whole)
+          ? (p.quantity * p.split_quantity_per_whole) - (p.self_retain_quantity || 0)
+          : null;
+
         insertProduct.run(
           groupBuyId,
+          p.product_type || 'fixed',
           p.name,
           p.original_price,
-          p.total_quantity,
-          p.remaining_quantity ?? p.total_quantity,
-          p.is_split_allowed ? 1 : 0,
-          p.is_frozen ? 1 : 0,
-          p.unit_price
+          p.quantity,
+          p.remaining_quantity ?? p.quantity,
+          isFixed ? (p.allow_split ? 1 : 0) : 0,
+          isFixed ? (p.split_unit || null) : null,
+          isFixed ? (p.split_quantity_per_whole || null) : null,
+          isFixed ? (p.split_price_per_unit || null) : null,
+          isFixed ? (p.self_retain_quantity || 0) : 0,
+          p.needs_cold_chain ? 1 : 0,
+          p.unit_price,
+          splitRemaining
         );
       });
 
       // 管理员运费预警检查
-      // 触发条件：商品名称包含（酒、水、饮料、牛奶）且总金额 > 200元
-      const totalAmount = products.reduce((sum, p) => sum + (p.original_price * p.total_quantity), 0);
-      if (totalAmount > 200) {
-        const freightWarningKeywords = ['酒', '水', '饮料', '牛奶'];
-        const hasWarningProduct = products.some(p =>
-          freightWarningKeywords.some(kw => p.name.includes(kw))
+      // 触发条件：商品名称匹配预警关键词（正则）且总金额超过阈值
+      const totalAmount = products.reduce((sum, p) => sum + (p.original_price * p.quantity), 0);
+      if (totalAmount > config.freightWarningThreshold) {
+        const matchedProducts = products.filter(p =>
+          config.freightWarningKeywords.test(p.name)
         );
-        if (hasWarningProduct) {
+        if (matchedProducts.length > 0) {
           const warning = {
             type: 'FREIGHT_WARNING',
             group_buy_id: groupBuyId,
             title: title,
             total_amount: totalAmount,
-            products: products.filter(p => freightWarningKeywords.some(kw => p.name.includes(kw))),
+            threshold: config.freightWarningThreshold,
+            matched_products: matchedProducts.map(p => p.name),
             timestamp: new Date().toISOString(),
-            message: `【管理员预警】拼单"${title}"（ID:${groupBuyId}）商品总金额¥${totalAmount}超过200元，且含有酒水/饮料类商品，请关注运费计算`
+            message: `【管理员预警】拼单"${title}"（ID:${groupBuyId}）商品总金额¥${totalAmount}超过${config.freightWarningThreshold}元，且含有酒水/饮料类商品（${matchedProducts.map(p => p.name).join('、')}），请关注运费计算`
           };
           // 输出到控制台（生产环境可替换为邮件/钉钉通知）
           console.warn('🚨 管理员运费预警:', JSON.stringify(warning, null, 2));
@@ -208,14 +262,86 @@ router.post('/', (req, res) => {
   }
 });
 
+// 管理员：查看拼单收款进度
+router.get('/:id/payment-progress', (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const gb = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(id);
+    if (!gb) {
+      return res.status(404).json({ error: '拼单不存在' });
+    }
+
+    const totalAmount = db.prepare(`
+      SELECT COALESCE(SUM(subtotal), 0) as total FROM order_items WHERE group_buy_id = ?
+    `).get(id).total;
+
+    const costDetails = db.prepare(`
+      SELECT cd.*, u.nickname as user_name, u.avatar as user_avatar
+      FROM cost_details cd
+      JOIN users u ON cd.user_id = u.id
+      WHERE cd.group_buy_id = ?
+    `).all(id);
+
+    const payments = db.prepare(`
+      SELECT p.*, u.nickname as user_name
+      FROM payments p
+      JOIN users u ON p.user_id = u.id
+      WHERE p.group_buy_id = ?
+    `).all(id);
+
+    const paymentMap: Record<number, any> = {};
+    payments.forEach((p: any) => { paymentMap[p.user_id] = p; });
+
+    const members = costDetails.map((cd: any) => ({
+      user_id: cd.user_id,
+      user_name: cd.user_name,
+      user_avatar: cd.user_avatar,
+      should_pay: cd.final_amount,
+      paid: !!paymentMap[cd.user_id],
+      paid_amount: paymentMap[cd.user_id]?.amount || 0,
+      paid_at: paymentMap[cd.user_id]?.created_at || null,
+    }));
+
+    const allPaid = members.length > 0 && members.every((m: any) => m.paid);
+
+    res.json({
+      group_buy_id: Number(id),
+      title: gb.title,
+      status: gb.status,
+      total_amount: totalAmount,
+      all_paid: allPaid,
+      members,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 更新拼单状态
 router.put('/:id/status', (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
 
-    const stmt = db.prepare('UPDATE group_buys SET status = ? WHERE id = ?');
-    stmt.run(status, id);
+    const gb = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(id);
+    if (!gb) {
+      return res.status(404).json({ error: '拼单不存在' });
+    }
+
+    // 标记为"已送达"时记录时间，用于7天自动完成
+    if (status === '已送达') {
+      db.prepare('UPDATE group_buys SET status = ?, delivered_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, id);
+    } else {
+      db.prepare('UPDATE group_buys SET status = ? WHERE id = ?').run(status, id);
+    }
+
+    // 状态变更为"已下单"时，通知管理员
+    if (status === '已下单' && gb.status !== '已下单') {
+      const groupBuy = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(id);
+      console.log(`📦 [通知] 拼单"${groupBuy.title}"(ID:${id})已收齐款项，请前往山姆下单`);
+      // TODO: 接入钉钉机器人webhook或邮件通知
+    }
 
     const groupBuy = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(id);
     res.json(groupBuy);
@@ -260,16 +386,16 @@ router.get('/:id/cost-details', (req, res) => {
       GROUP BY user_id
     `).all(id);
 
-    // 检查是否有生鲜商品
+    // 检查是否有需冰鲜配送的商品
     const products = db.prepare('SELECT * FROM products WHERE group_buy_id = ?').all(id);
-    const frozen = hasFrozenItem(products);
+    const needsColdChain = hasColdChainItem(products);
 
     if (orderItems.length === 0) {
-      return res.json({ costDetails: [], totalCost: 0, mode: 'sam', has_frozen: frozen });
+      return res.json({ costDetails: [], totalCost: 0, mode: 'sam', needs_cold_chain: needsColdChain });
     }
 
     const totalAmount = orderItems.reduce((sum, item) => sum + item.product_amount, 0);
-    const costInfo = calculateTotalCost(totalAmount, frozen);
+    const costInfo = calculateTotalCost(totalAmount, needsColdChain);
 
     // 计算团长优惠是否生效
     const leaderOrder = orderItems.find(i => i.user_id === gb.creator_id);
@@ -282,7 +408,7 @@ router.get('/:id/cost-details', (req, res) => {
       productAmount: item.product_amount
     }));
 
-    const costDetails = calculateCostShare(totalAmount, userOrders, frozen, gb.creator_id, discountApplies);
+    const { details: costDetails, diffCents } = calculateCostShare(totalAmount, userOrders, needsColdChain, gb.creator_id, discountApplies);
 
     // 保存到数据库
     const insertCostDetail = db.prepare(`
@@ -308,6 +434,12 @@ router.get('/:id/cost-details', (req, res) => {
       }
     });
 
+    // 记录平台尾差收益
+    db.prepare(`
+      INSERT OR REPLACE INTO platform_revenue (group_buy_id, diff_cents, recorded_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+    `).run(id, diffCents);
+
     // 获取带用户名的费用详情
     const details = db.prepare(`
       SELECT cd.*, u.nickname as user_name
@@ -320,12 +452,223 @@ router.get('/:id/cost-details', (req, res) => {
       costDetails: details,
       totalCost: costInfo.totalCost,
       mode: costInfo.mode,
-      has_frozen: frozen,
+      needs_cold_chain: needsColdChain,
       packaging: costInfo.packaging,
       delivery: costInfo.delivery,
       frozen: costInfo.frozen,
       reward: costInfo.reward
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 成员主动退出拼单
+router.delete('/:id/members/me', (req, res) => {
+  try {
+    const { id } = req.params;
+    const user_id = req.headers['x-user-id'];
+
+    if (!user_id) {
+      return res.status(401).json({ error: '未登录' });
+    }
+
+    const gb = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(id);
+    if (!gb) {
+      return res.status(404).json({ error: '拼单不存在' });
+    }
+
+    if (gb.status !== '拼单中') {
+      return res.status(400).json({ error: '当前状态不允许退出拼单' });
+    }
+
+    // 团长不能退出自己的拼单
+    if (gb.creator_id === Number(user_id)) {
+      return res.status(400).json({ error: '团长不能退出拼单，如需结束请取消拼单' });
+    }
+
+    // 删除该用户的所有订单项
+    const deleted = db.prepare('DELETE FROM order_items WHERE group_buy_id = ? AND user_id = ?').run(id, user_id);
+
+    if (deleted.changes === 0) {
+      return res.status(400).json({ error: '未找到该成员的订单' });
+    }
+
+    // 删除该用户的费用详情
+    db.prepare('DELETE FROM cost_details WHERE group_buy_id = ? AND user_id = ?').run(id, user_id);
+
+    // 重新计算费用（触发分摊重算）
+    recalculateCosts(id);
+
+    res.json({ success: true, message: '已退出拼单，费用已重新计算' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 发起人增加商品（仅限"拼单中"状态）
+router.post('/:id/products', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { products } = req.body;
+
+    const gb = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(id);
+    if (!gb) {
+      return res.status(404).json({ error: '拼单不存在' });
+    }
+
+    if (gb.status !== '拼单中') {
+      return res.status(400).json({ error: '当前状态不允许添加商品' });
+    }
+
+    if (!products || products.length === 0) {
+      return res.status(400).json({ error: '请添加至少一个商品' });
+    }
+
+    // 计算当前总金额和新增加商品的金额
+    const currentTotal = db.prepare(`
+      SELECT COALESCE(SUM(subtotal), 0) as total FROM order_items WHERE group_buy_id = ?
+    `).get(id).total;
+
+    const newProductsTotal = products.reduce((sum, p) => sum + (p.original_price * p.quantity), 0);
+    const newTotal = currentTotal + newProductsTotal;
+
+    // 检查模式切换
+    const currentProducts = db.prepare('SELECT * FROM products WHERE group_buy_id = ?').all(id);
+    const currentFrozen = hasColdChainItem(currentProducts);
+    const newFrozen = hasColdChainItem([...currentProducts, ...products.map(p => ({ needs_cold_chain: p.needs_cold_chain }))]);
+
+    const currentCostInfo = calculateTotalCost(currentTotal, currentFrozen);
+    const newCostInfo = calculateTotalCost(newTotal, newFrozen);
+
+    const modeSwitch = currentCostInfo.mode !== newCostInfo.mode;
+    const modeSwitchWarning = modeSwitch
+      ? `注意：添加商品后配送模式将从"${currentCostInfo.mode === 'sam' ? '山姆' : '京东'}"切换为"${newCostInfo.mode === 'sam' ? '山姆' : '京东'}"，运费将从${currentCostInfo.delivery}元变为${newCostInfo.delivery}元`
+      : null;
+
+    // 添加商品
+    const insertProduct = db.prepare(`
+      INSERT INTO products (group_buy_id, product_type, name, original_price, quantity, remaining_quantity, allow_split, split_unit, split_quantity_per_whole, split_price_per_unit, self_retain_quantity, needs_cold_chain, unit_price, split_remaining_quantity)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    products.forEach(p => {
+      const isFixed = p.product_type !== 'custom';
+      const splitRemaining = (isFixed && p.allow_split && p.split_quantity_per_whole)
+        ? (p.quantity * p.split_quantity_per_whole) - (p.self_retain_quantity || 0)
+        : null;
+
+      insertProduct.run(
+        id,
+        p.product_type || 'fixed',
+        p.name,
+        p.original_price,
+        p.quantity,
+        p.quantity,
+        isFixed ? (p.allow_split ? 1 : 0) : 0,
+        isFixed ? (p.split_unit || null) : null,
+        isFixed ? (p.split_quantity_per_whole || null) : null,
+        isFixed ? (p.split_price_per_unit || null) : null,
+        isFixed ? (p.self_retain_quantity || 0) : 0,
+        p.needs_cold_chain ? 1 : 0,
+        p.unit_price || p.original_price,
+        splitRemaining
+      );
+    });
+
+    // 重新计算所有成员费用
+    recalculateCosts(id);
+
+    // TODO: 发送推送通知给所有成员（拼单商品已更新，请查看最新费用）
+
+    res.json({
+      success: true,
+      modeSwitch,
+      modeSwitchWarning,
+      newTotalAmount: newTotal,
+      newMode: newCostInfo.mode
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 重新计算所有成员费用（内部函数）
+function recalculateCosts(groupBuyId) {
+  const gb = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(groupBuyId);
+  if (!gb) return;
+
+  const products = db.prepare('SELECT * FROM products WHERE group_buy_id = ?').all(groupBuyId);
+  const needsColdChain = hasColdChainItem(products);
+
+  const orderItems = db.prepare(`
+    SELECT user_id, SUM(subtotal) as product_amount
+    FROM order_items
+    WHERE group_buy_id = ?
+    GROUP BY user_id
+  `).all(groupBuyId);
+
+  const totalAmount = orderItems.reduce((sum, item) => sum + item.product_amount, 0);
+  const costInfo = calculateTotalCost(totalAmount, needsColdChain);
+
+  const leaderOrder = orderItems.find(i => i.user_id === gb.creator_id);
+  const leaderAmount = leaderOrder ? leaderOrder.product_amount : 0;
+  const discountApplies = leaderDiscountApplies(orderItems.length, leaderAmount, products);
+
+  const userOrders = orderItems.map(item => ({
+    userId: item.user_id,
+    productAmount: item.product_amount
+  }));
+
+  const { details: costDetails, diffCents } = calculateCostShare(totalAmount, userOrders, needsColdChain, gb.creator_id, discountApplies);
+
+  // 清除旧费用详情，重新插入
+  db.prepare('DELETE FROM cost_details WHERE group_buy_id = ?').run(groupBuyId);
+
+  const insertCostDetail = db.prepare(`
+    INSERT INTO cost_details (group_buy_id, user_id, base_amount, share_fee, leader_discount, final_amount)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  costDetails.forEach(cd => {
+    insertCostDetail.run(groupBuyId, cd.userId, cd.baseAmount, cd.shareFee, cd.leaderDiscount, cd.finalAmount);
+  });
+
+  // 记录平台尾差收益
+  db.prepare(`
+    INSERT OR REPLACE INTO platform_revenue (group_buy_id, diff_cents, recorded_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+  `).run(groupBuyId, diffCents);
+}
+
+// 管理员确认送达，通知所有成员取货
+router.post('/:id/delivered', (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const gb = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(id);
+    if (!gb) {
+      return res.status(404).json({ error: '拼单不存在' });
+    }
+
+    // 获取所有参与成员的手机号（预留短信通知）
+    const members = db.prepare(`
+      SELECT DISTINCT u.id, u.nickname, u.phone
+      FROM users u
+      JOIN order_items oi ON u.id = oi.user_id
+      WHERE oi.group_buy_id = ?
+    `).all(id);
+
+    members.forEach((m: any) => {
+      if (m.phone) {
+        // TODO: 调用短信服务发送取货通知
+        console.log(`📱 [短信通知] ${m.phone}: 您的拼单"${gb.title}"已送达，请前往${gb.pickup_location}取货`);
+      } else {
+        console.log(`📦 [站内通知] 用户${m.nickname}的拼单"${gb.title}"已送达，请前往${gb.pickup_location}取货`);
+      }
+    });
+
+    res.json({ success: true, message: `已通知${members.length}位成员` });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

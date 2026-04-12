@@ -11,18 +11,18 @@ export function getDeliveryMode(totalAmount) {
 }
 
 /**
- * 判断是否有生鲜商品
+ * 判断是否有需冰鲜配送的商品（冷链配送物品才加收冰鲜附加费）
  */
-export function hasFrozenItem(products) {
-  return products.some(p => p.is_frozen);
+export function hasColdChainItem(products) {
+  return products.some(p => p.needs_cold_chain);
 }
 
 /**
  * 计算总成本
- * 山姆模式(≥99): 商品 + 1(包装) + 1(含冰鲜?1:0) + 0.5(酬劳)
+ * 山姆模式(≥99): 商品 + 1(包装) + 1(需冰鲜配送?1:0) + 0.5(酬劳)
  * 京东模式(<99): 商品 + 5(运费) + 2(包装含冰鲜) + 0.5(酬劳)
  */
-export function calculateTotalCost(totalAmount, hasFrozen = false) {
+export function calculateTotalCost(totalAmount, hasColdChain = false) {
   const mode = getDeliveryMode(totalAmount);
 
   let delivery, packaging, frozen, reward;
@@ -30,7 +30,7 @@ export function calculateTotalCost(totalAmount, hasFrozen = false) {
   if (mode === 'sam') {
     delivery = 0;
     packaging = 1;
-    frozen = hasFrozen ? 1 : 0;
+    frozen = hasColdChain ? 1 : 0;
     reward = 0.5;
   } else {
     // 京东模式：包装费2元已含冰鲜，不再单独收取
@@ -50,13 +50,13 @@ export function calculateTotalCost(totalAmount, hasFrozen = false) {
  *
  * @param {number} totalAmount - 商品总金额
  * @param {Array} userOrders - [{ userId, productAmount }]
- * @param {boolean} hasFrozen - 是否有生鲜商品
+ * @param {boolean} hasColdChain - 是否需冰鲜配送
  * @param {number} leaderId - 团长userId
  * @param {boolean} leaderDiscountApplies - 团长优惠是否生效
  * @returns {Array} [{ userId, baseAmount, shareFee, leaderDiscount, finalAmount }]
  */
-export function calculateCostShare(totalAmount, userOrders, hasFrozen = false, leaderId = null, leaderDiscountApplies = false) {
-  const { delivery, packaging, frozen, reward, totalCost } = calculateTotalCost(totalAmount, hasFrozen);
+export function calculateCostShare(totalAmount, userOrders, hasColdChain = false, leaderId = null, leaderDiscountApplies = false) {
+  const { delivery, packaging, frozen, reward, totalCost } = calculateTotalCost(totalAmount, hasColdChain);
   const totalFee = delivery + packaging + frozen + reward;
 
   const n = userOrders.length;
@@ -104,13 +104,16 @@ export function calculateCostShare(totalAmount, userOrders, hasFrozen = false, l
     finalCents[adjustIdx].finalCents += diffCents;
   }
 
-  return finalCents.map(item => ({
-    userId: item.userId,
-    baseAmount: item.baseAmount,
-    shareFee: Math.round(item.shareFee * 100) / 100,
-    leaderDiscount: leaderDiscountApplies && item.userId === leaderId ? 2 : 0,
-    finalAmount: item.finalCents / 100
-  }));
+  return {
+    details: finalCents.map(item => ({
+      userId: item.userId,
+      baseAmount: item.baseAmount,
+      shareFee: Math.round(item.shareFee * 100) / 100,
+      leaderDiscount: leaderDiscountApplies && item.userId === leaderId ? 2 : 0,
+      finalAmount: item.finalCents / 100
+    })),
+    diffCents
+  };
 }
 
 /**

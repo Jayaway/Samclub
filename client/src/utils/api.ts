@@ -15,10 +15,14 @@ export interface Product {
   group_buy_id: number;
   name: string;
   original_price: number;
-  total_quantity: number;
+  quantity: number; // 整份数量
   remaining_quantity: number;
-  is_split_allowed: boolean;
-  is_frozen: boolean;
+  allow_split: boolean;
+  split_unit: string;
+  split_quantity_per_whole: number;
+  split_price_per_unit: number;
+  self_retain_quantity: number;
+  needs_cold_chain: boolean;
   unit_price: number;
 }
 
@@ -29,9 +33,12 @@ export interface OrderItem {
   product_id: number;
   quantity: number;
   subtotal: number;
+  purchase_type?: 'whole' | 'split';
   product_name?: string;
-  is_frozen?: boolean;
+  needs_cold_chain?: boolean;
   user_name?: string;
+  split_remaining_quantity?: number;
+  allow_split?: boolean;
 }
 
 export interface CostDetail {
@@ -57,7 +64,7 @@ export interface GroupBuy {
   leader_name?: string;
   leader_avatar?: string;
   member_count?: number;
-  has_frozen?: boolean;
+  needs_cold_chain?: boolean;
   progress?: number;
   products?: Product[];
   orderItems?: OrderItem[];
@@ -69,7 +76,7 @@ export interface CostDetailsResponse {
   costDetails: CostDetail[];
   totalCost: number;
   mode: string;
-  has_frozen: boolean;
+  needs_cold_chain: boolean;
   packaging: number;
   delivery: number;
   frozen: number;
@@ -132,6 +139,20 @@ export async function fetchGroupBuyById(id: number): Promise<GroupBuy> {
   return res.json();
 }
 
+export interface PaymentInfo {
+  payment_remark: string;
+  qr_code_url: string;
+  leader_name: string;
+  leader_avatar: string;
+  total_amount: number;
+}
+
+export async function fetchPaymentInfo(groupId: number): Promise<PaymentInfo> {
+  const res = await fetch(`${API_BASE}/group-buys/${groupId}/payment-info`);
+  if (!res.ok) throw new Error('获取收款信息失败');
+  return res.json();
+}
+
 export async function createGroupBuy(data: {
   creator_id: number;
   title: string;
@@ -181,12 +202,17 @@ export async function addOrderItem(data: {
   user_id: number;
   product_id: number;
   quantity: number;
+  purchase_type?: 'whole' | 'split';
 }): Promise<OrderItem> {
   const res = await fetch(`${API_BASE}/order-items`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '添加失败');
+  }
   return res.json();
 }
 
@@ -197,6 +223,32 @@ export async function removeOrderItem(id: number): Promise<void> {
 // Cost Details
 export async function fetchCostDetails(groupBuyId: number): Promise<CostDetailsResponse> {
   const res = await fetch(`${API_BASE}/group-buys/${groupBuyId}/cost-details`);
+  return res.json();
+}
+
+// Member exits group buy
+export async function exitGroupBuy(groupBuyId: number, userId: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/group-buys/${groupBuyId}/members/me`, {
+    method: 'DELETE',
+    headers: { 'x-user-id': String(userId) },
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || '退出失败');
+  }
+}
+
+// Creator adds products to existing group buy (triggers cost recalculation)
+export async function addProductsToGroupBuy(groupBuyId: number, products: Omit<Product, 'id' | 'group_buy_id'>[]): Promise<GroupBuy> {
+  const res = await fetch(`${API_BASE}/group-buys/${groupBuyId}/products`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ products }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || '添加商品失败');
+  }
   return res.json();
 }
 
@@ -212,6 +264,91 @@ export async function submitPayment(data: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
+}
+
+export interface PaymentProgressMember {
+  user_id: number;
+  user_name: string;
+  user_avatar: string;
+  should_pay: number;
+  paid: boolean;
+  paid_amount: number;
+  paid_at: string | null;
+}
+
+export interface PaymentProgress {
+  group_buy_id: number;
+  title: string;
+  status: string;
+  total_amount: number;
+  all_paid: boolean;
+  members: PaymentProgressMember[];
+}
+
+export async function fetchPaymentProgress(groupId: number): Promise<PaymentProgress> {
+  const res = await fetch(`${API_BASE}/group-buys/${groupId}/payment-progress`);
+  if (!res.ok) throw new Error('获取收款进度失败');
+  return res.json();
+}
+
+export async function confirmPayment(paymentId: number, status: '已确认' | '已拒绝'): Promise<void> {
+  await fetch(`${API_BASE}/payments/${paymentId}/confirm`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function batchConfirmPayments(paymentIds: number[], status: '已确认' | '已拒绝'): Promise<void> {
+  await fetch(`${API_BASE}/payments/batch-confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ payment_ids: paymentIds, status }),
+  });
+}
+
+export interface PaymentRecord {
+  id: number;
+  group_buy_id: number;
+  user_id: number;
+  amount: number;
+  status: string;
+  user_name?: string;
+  user_avatar?: string;
+}
+
+export async function fetchPaymentsByGroup(groupId: number): Promise<PaymentRecord[]> {
+  const res = await fetch(`${API_BASE}/payments/group/${groupId}`);
+  return res.json();
+}
+
+// Messages
+export interface Message {
+  id: number;
+  group_buy_id: number;
+  user_id: number;
+  content: string;
+  created_at: string;
+  user_name: string;
+  user_avatar: string;
+}
+
+export async function fetchMessages(groupId: number): Promise<Message[]> {
+  const res = await fetch(`${API_BASE}/messages/${groupId}`);
+  return res.json();
+}
+
+export async function sendMessage(groupId: number, userId: number, content: string): Promise<Message> {
+  const res = await fetch(`${API_BASE}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ group_buy_id: groupId, user_id: userId, content }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || '发送留言失败');
+  }
+  return res.json();
 }
 
 // Local storage helpers

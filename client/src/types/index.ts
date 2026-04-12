@@ -24,7 +24,7 @@ export interface GroupBuy {
   status: GroupStatus;
   pickupLocation: string;
   hot?: boolean;
-  has_frozen?: boolean;
+  needs_cold_chain?: boolean;
   progress?: number;
   total_amount?: number;
 }
@@ -32,15 +32,18 @@ export interface GroupBuy {
 export interface Product {
   id: number;
   name: string;
-  unitPrice: number;
+  unitPrice: number; // 整份单价（元）
   category?: string;
-  remaining: number;
-  total: number;
+  remaining: number; // 剩余可购数量
+  quantity: number; // 整份数量
   isFresh: boolean;
-  quantity: number;
-  is_frozen?: boolean;
-  is_split_allowed?: boolean;
-  unit_price?: number;
+  needs_cold_chain?: boolean;
+  allow_split?: boolean; // 是否允许拆分
+  unit_price?: number; // 整份单价（元）
+  split_unit?: string; // 拆分单位（片/个）
+  split_quantity_per_whole?: number; // 每整份含拆分单位数
+  split_price_per_unit?: number; // 拆分单价（分）
+  self_retain_quantity?: number; // 发起人自留数量
 }
 
 export interface CartItem {

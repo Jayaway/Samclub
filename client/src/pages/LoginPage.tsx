@@ -13,16 +13,15 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [dormBuilding, setDormBuilding] = useState('');
   const [phone, setPhone] = useState('');
   const [avatar, setAvatar] = useState<string | null>(null);
-  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [studentIdError, setStudentIdError] = useState('');
   const [phoneError, setPhoneError] = useState('');
 
-  // 校验学号格式（8-10位，可包含字母和数字）
+  // 校验学号格式（B/F + 8位数字，如 B25011215 或 F25011215）
   const validateStudentId = (id: string) => {
     if (!id.trim()) return '请填写学号';
-    if (!/^[A-Za-z0-9]{8,10}$/.test(id.trim())) return '学号应为8-10位字母或数字';
+    if (!/^(B|F)\d{8}$/.test(id.trim())) return '学号格式：B/F + 8位数字（如 B25011215）';
     return '';
   };
 
@@ -40,7 +39,6 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         setError('头像图片不能超过2MB');
         return;
       }
-      setAvatarFile(file);
       const reader = new FileReader();
       reader.onload = (ev) => {
         setAvatar(ev.target?.result as string);
@@ -294,7 +292,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                 {avatar && (
                   <button
                     type="button"
-                    onClick={() => { setAvatar(null); setAvatarFile(null); }}
+                    onClick={() => setAvatar(null)}
                     className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white"
                   >
                     <X size={12} />
@@ -317,11 +315,12 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                 value={studentId}
                 onChange={(e) => { setStudentId(e.target.value); setStudentIdError(''); }}
                 placeholder="输入你的学号"
-                maxLength={10}
+                maxLength={9}
                 className={`w-full bg-white/10 border ${
                   studentIdError ? 'border-red-500/50' : 'border-white/15'
                 } text-white placeholder-white/25 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/60 focus:bg-white/15 transition-all`}
               />
+              <p className="text-white/30 text-[10px] mt-1">格式：B25011215 或 F25011215</p>
               {studentIdError && (
                 <p className="text-red-400 text-[10px] mt-1">{studentIdError}</p>
               )}

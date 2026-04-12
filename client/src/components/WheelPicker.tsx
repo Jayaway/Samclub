@@ -13,12 +13,17 @@ interface WheelPickerProps {
 export default function WheelPicker({ visible, onClose, onConfirm, initialDate }: WheelPickerProps) {
   const minuteOptions = [0, 15, 30, 45];
 
+  // 最早可选时间：当前时间 + 15分钟，向上取整到下一个15分钟倍数
+  const getMinDeadline = () => {
+    const intervalMs = 15 * 60 * 1000;
+    const minTime = Date.now() + intervalMs;
+    return new Date(Math.ceil(minTime / intervalMs) * intervalMs);
+  };
+
   const getDefaultDate = () => {
-    const d = new Date();
+    const min = getMinDeadline();
+    const d = new Date(min);
     d.setDate(d.getDate() + 2);
-    d.setMinutes(Math.round(d.getMinutes() / 15) * 15);
-    d.setSeconds(0);
-    d.setMilliseconds(0);
     return d;
   };
 
@@ -44,7 +49,13 @@ export default function WheelPicker({ visible, onClose, onConfirm, initialDate }
   const selectedMinute = selectedDate.getMinutes();
 
   const handleConfirm = () => {
-    onConfirm(selectedDate);
+    const min = getMinDeadline();
+    if (selectedDate < min) {
+      // 自动修正为最小合法时间
+      onConfirm(min);
+    } else {
+      onConfirm(selectedDate);
+    }
     onClose();
   };
 
@@ -213,10 +224,11 @@ export default function WheelPicker({ visible, onClose, onConfirm, initialDate }
                 <button
                   key={days}
                   onClick={() => {
-                    const d = new Date();
+                    const min = getMinDeadline();
+                    const d = new Date(min);
                     d.setDate(d.getDate() + days);
-                    d.setMinutes(Math.round(d.getMinutes() / 15) * 15);
                     d.setSeconds(0);
+                    d.setMilliseconds(0);
                     setSelectedDate(d);
                   }}
                   className="flex-1 py-3 rounded-xl bg-zinc-100 text-zinc-600 text-sm font-bold hover:bg-zinc-200 transition-colors active:scale-95"

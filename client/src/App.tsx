@@ -40,7 +40,7 @@ function mapGroup(g: any): GroupBuy {
     status: mapStatus(g.status),
     pickupLocation: g.pickup_location || '待定',
     hot: (g.progress || 0) >= 100,
-    has_frozen: g.has_frozen,
+    needs_cold_chain: g.needs_cold_chain,
     progress: g.progress,
     total_amount: g.total_amount,
   };
@@ -174,7 +174,7 @@ export default function App() {
       <>
         <MyPage
           userId={user.id}
-          onBack={() => navigate('square')}
+          onBack={() => navigate('profile')}
           onNavigate={navigate}
         />
         {showNav && <BottomNav current={page} onNavigate={navigate} />}

@@ -28,26 +28,6 @@ export const springSnappy: Transition = {
   mass: 0.5,
 };
 
-export const fadeInUp: Variants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0 },
-};
-
-export const fadeInScale: Variants = {
-  hidden: { opacity: 0, scale: 0.9 },
-  visible: { opacity: 1, scale: 1 },
-};
-
-export const slideInLeft: Variants = {
-  hidden: { opacity: 0, x: -30 },
-  visible: { opacity: 1, x: 0 },
-};
-
-export const slideInRight: Variants = {
-  hidden: { opacity: 0, x: 30 },
-  visible: { opacity: 1, x: 0 },
-};
-
 export const staggerContainer: Variants = {
   hidden: { opacity: 0 },
   visible: {
@@ -65,43 +45,6 @@ export const staggerItem: Variants = {
     opacity: 1,
     y: 0,
     scale: 1,
-  },
-};
-
-export const buttonTap = {
-  scale: 0.95,
-  transition: springSnappy,
-};
-
-export const cardHover = {
-  y: -4,
-  scale: 1.02,
-  transition: springConfig,
-};
-
-export const iconBounce: Variants = {
-  initial: { scale: 1 },
-  animate: {
-    scale: [1, 1.2, 1],
-    transition: {
-      duration: 0.4,
-      ease: 'easeInOut',
-    },
-  },
-};
-
-export const pulseGlow: Variants = {
-  initial: { boxShadow: '0 0 0 0 rgba(6, 182, 212, 0.4)' },
-  animate: {
-    boxShadow: [
-      '0 0 0 0 rgba(6, 182, 212, 0.4)',
-      '0 0 0 10px rgba(6, 182, 212, 0)',
-      '0 0 0 0 rgba(6, 182, 212, 0)',
-    ],
-    transition: {
-      duration: 1.5,
-      repeat: Infinity,
-    },
   },
 };
 

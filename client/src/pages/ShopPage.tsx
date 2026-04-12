@@ -21,9 +21,11 @@ interface LocalProduct extends Product {
   myQuantity: number;
   mySplitQuantity: number; // 拆分单位购买数量
   myOrderId?: number;
+  myPurchaseType?: 'whole' | 'split';
   splitUnit?: string;
   splitQuantity?: number; // 整份包含的拆分单位数
   splitPricePerUnit?: number;
+  splitRemaining?: number; // 剩余可售拆分单位数（来自后端原子计数）
 }
 
 export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPageProps) {
@@ -46,9 +48,9 @@ export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPag
         setGroupData(group);
 
         // Map products with user's existing orders
-        const orderMap: Record<number, { quantity: number; id: number }> = {};
+        const orderMap: Record<number, { quantity: number; id: number; purchase_type?: string }> = {};
         orders.forEach((o: any) => {
-          orderMap[o.product_id] = { quantity: o.quantity, id: o.id };
+          orderMap[o.product_id] = { quantity: o.quantity, id: o.id, purchase_type: o.purchase_type };
         });
 
         const mappedProducts: LocalProduct[] = (group.products || []).map((p: any) => ({
@@ -57,16 +59,19 @@ export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPag
           unitPrice: p.unit_price || p.unitPrice,
           category: getCategory(p.name),
           remaining: p.remaining_quantity || p.remaining,
-          total: p.total_quantity || p.total,
-          isFresh: Boolean(p.is_frozen || p.isFresh),
+          total: p.quantity || p.total,
+          needs_cold_chain: Boolean(p.needs_cold_chain),
+          isFresh: getCategory(p.name) === '生鲜',
           quantity: 0,
-          myQuantity: orderMap[p.id]?.quantity || 0,
-          mySplitQuantity: 0,
+          myQuantity: orderMap[p.id]?.purchase_type !== 'split' ? (orderMap[p.id]?.quantity || 0) : 0,
+          mySplitQuantity: orderMap[p.id]?.purchase_type === 'split' ? (orderMap[p.id]?.quantity || 0) : 0,
           myOrderId: orderMap[p.id]?.id,
-          is_split_allowed: p.is_split_allowed,
+          myPurchaseType: orderMap[p.id]?.purchase_type,
+          allow_split: p.allow_split,
           splitUnit: p.split_unit || '个',
           splitQuantity: p.split_quantity || 1,
           splitPricePerUnit: p.split_price_per_unit || (p.unit_price ? parseFloat((p.unit_price / (p.split_quantity || 1)).toFixed(2)) : p.unitPrice),
+          splitRemaining: p.split_remaining_quantity ?? (p.allow_split ? null : 0),
         }));
 
         setProducts(mappedProducts);
@@ -99,56 +104,67 @@ export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPag
   const remaining = Math.max(0, target - newTotal);
 
   const updateQty = async (product: LocalProduct, delta: number, isSplit: boolean = false) => {
-    if (isSplit) {
-      // 拆分单位购买
-      const current = product.mySplitQuantity;
-      const maxSplit = product.is_split_allowed ? (product.remaining * (product.splitQuantity || 1)) : 0;
-      const next = Math.max(0, Math.min(maxSplit, current + delta));
-      if (next === current) return;
+    const targetQty = isSplit ? product.mySplitQuantity : product.myQuantity;
+    const targetType: 'whole' | 'split' = isSplit ? 'split' : 'whole';
+    const maxStock = isSplit
+      ? (product.splitRemaining ?? 0)
+      : product.remaining;
+    const next = Math.max(0, Math.min(maxStock, targetQty + delta));
+
+    if (next === targetQty) return;
+
+    // Track the result of the operation for state update
+    let newOrderId = product.myOrderId;
+    let newType = product.myPurchaseType ?? targetType;
+
+    try {
+      // 跨类型切换：先删再创
+      if (product.myOrderId && product.myPurchaseType !== targetType) {
+        await removeOrderItem(product.myOrderId);
+        newOrderId = undefined;
+        newType = targetType;
+      }
+
+      if (next === 0) {
+        // 删到0
+        if (product.myOrderId) {
+          await removeOrderItem(product.myOrderId);
+          newOrderId = undefined;
+          newType = product.myPurchaseType ?? targetType;
+        }
+      } else if (newOrderId !== undefined) {
+        // 有订单，更新（UPSERT）
+        await addOrderItem({
+          group_buy_id: groupId,
+          user_id: userId,
+          product_id: product.id,
+          quantity: next,
+          purchase_type: targetType,
+        });
+        newType = targetType;
+      } else {
+        // 新增订单
+        const result = await addOrderItem({
+          group_buy_id: groupId,
+          user_id: userId,
+          product_id: product.id,
+          quantity: next,
+          purchase_type: targetType,
+        });
+        newOrderId = result.id;
+        newType = targetType;
+      }
+
       setProducts((prev) =>
         prev.map((p) => {
           if (p.id !== product.id) return p;
-          return { ...p, mySplitQuantity: next };
+          return isSplit
+            ? { ...p, mySplitQuantity: next, myPurchaseType: newType, myOrderId: newOrderId }
+            : { ...p, myQuantity: next, myPurchaseType: newType, myOrderId: newOrderId ?? undefined };
         })
       );
-    } else {
-      // 整份购买
-      const current = product.myQuantity;
-      const next = Math.max(0, Math.min(product.remaining, current + delta));
-      if (next === current) return;
-
-      try {
-        if (product.myOrderId) {
-          if (next === 0) {
-            await removeOrderItem(product.myOrderId);
-            product.myOrderId = undefined;
-          } else {
-            await addOrderItem({
-              group_buy_id: groupId,
-              user_id: userId,
-              product_id: product.id,
-              quantity: next,
-            });
-          }
-        } else if (next > 0) {
-          const result = await addOrderItem({
-            group_buy_id: groupId,
-            user_id: userId,
-            product_id: product.id,
-            quantity: next,
-          });
-          product.myOrderId = result.id;
-        }
-
-        setProducts((prev) =>
-          prev.map((p) => {
-            if (p.id !== product.id) return p;
-            return { ...p, myQuantity: next };
-          })
-        );
-      } catch (err) {
-        console.error('Failed to update quantity:', err);
-      }
+    } catch (err) {
+      console.error('Failed to update quantity:', err);
     }
   };
 
@@ -243,14 +259,16 @@ export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPag
                   >
                     {p.category}
                   </span>
-                  {p.isFresh && (
+                  {p.needs_cold_chain && (
                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-cyan-50 text-cyan-600 flex items-center gap-0.5">
                       <Snowflake size={9} />
-                      生鲜
+                      冰鲜
                     </span>
                   )}
                   <span className="text-[10px] text-zinc-400">
-                    剩 {p.remaining}/{p.total}
+                    {p.allow_split
+                      ? `可拆 ${p.splitRemaining ?? '-'}${p.splitUnit}`
+                      : `剩 ${p.remaining}/${p.total}`}
                   </span>
                 </div>
                 <h3 className="text-[#0c0c0c] font-bold text-sm leading-tight">{p.name}</h3>
@@ -290,7 +308,7 @@ export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPag
                   <Plus size={14} />
                 </button>
                 {/* 拆分购买控件 */}
-                {p.is_split_allowed && (
+                {p.allow_split && (
                   <div className="flex items-center gap-1 ml-2 pl-2 border-l border-zinc-200">
                     <span className="text-[10px] text-zinc-400">{p.splitUnit || '个'}</span>
                     <button
@@ -305,7 +323,7 @@ export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPag
                     </span>
                     <button
                       onClick={() => updateQty(p, 1, true)}
-                      disabled={p.mySplitQuantity >= p.remaining * (p.splitQuantity || 1)}
+                      disabled={p.mySplitQuantity >= (p.splitRemaining ?? 0)}
                       className="w-7 h-7 rounded-full bg-orange-500 flex items-center justify-center text-white disabled:opacity-30 active:scale-90 transition-transform shadow-md shadow-orange-500/20"
                     >
                       <Plus size={12} />
@@ -315,7 +333,7 @@ export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPag
               </div>
             </div>
             {/* 拆分购买说明 */}
-            {p.is_split_allowed && (
+            {p.allow_split && (
               <div className="text-[10px] text-orange-500 mt-2 bg-orange-50 px-2 py-1 rounded-lg inline-flex items-center gap-1">
                 可拆买 · 每{p.splitUnit || '个'} ¥{(p.splitPricePerUnit || 0).toFixed(1)}
               </div>

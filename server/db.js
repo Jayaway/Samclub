@@ -12,6 +12,7 @@ db.exec(`
     student_id TEXT UNIQUE NOT NULL,
     nickname TEXT NOT NULL,
     avatar TEXT DEFAULT '',
+    payment_qr TEXT DEFAULT '',
     dorm_building TEXT DEFAULT '',
     credit_score INTEGER DEFAULT 100,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -25,7 +26,9 @@ db.exec(`
     status TEXT DEFAULT '进行中',
     delivery_mode TEXT DEFAULT '',
     pickup_location TEXT DEFAULT '',
+    payment_remark TEXT DEFAULT '',
     total_amount REAL DEFAULT 0,
+    delivered_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (creator_id) REFERENCES users(id)
   );
@@ -33,17 +36,19 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     group_buy_id INTEGER NOT NULL,
+    product_type TEXT DEFAULT 'fixed',
     name TEXT NOT NULL,
     original_price REAL NOT NULL,
     total_quantity INTEGER NOT NULL,
     remaining_quantity INTEGER NOT NULL,
-    is_split_allowed INTEGER DEFAULT 0,
-    is_frozen INTEGER DEFAULT 0,
+    needs_cold_chain INTEGER DEFAULT 0,
     unit_price REAL NOT NULL,
     allow_split INTEGER DEFAULT 0,
     split_unit TEXT DEFAULT '',
     split_quantity INTEGER DEFAULT 0,
     split_price_per_unit REAL DEFAULT 0,
+    split_remaining_quantity INTEGER,
+    self_retain_quantity INTEGER DEFAULT 0,
     FOREIGN KEY (group_buy_id) REFERENCES group_buys(id)
   );
 
@@ -54,6 +59,7 @@ db.exec(`
     product_id INTEGER NOT NULL,
     quantity INTEGER NOT NULL,
     subtotal REAL NOT NULL,
+    purchase_type TEXT DEFAULT 'whole',
     FOREIGN KEY (group_buy_id) REFERENCES group_buys(id),
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (product_id) REFERENCES products(id)
@@ -83,6 +89,24 @@ db.exec(`
     FOREIGN KEY (group_buy_id) REFERENCES group_buys(id),
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_buy_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (group_buy_id) REFERENCES group_buys(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS platform_revenue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_buy_id INTEGER NOT NULL UNIQUE,
+    diff_cents INTEGER NOT NULL DEFAULT 0,
+    recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (group_buy_id) REFERENCES group_buys(id)
+  );
 `);
 
 // 迁移：添加新字段（对已有表安全执行）
@@ -92,6 +116,15 @@ const migrations = [
   "ALTER TABLE products ADD COLUMN split_quantity INTEGER DEFAULT 0",
   "ALTER TABLE products ADD COLUMN split_price_per_unit REAL DEFAULT 0",
   "ALTER TABLE users ADD COLUMN phone TEXT DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN needs_cold_chain INTEGER DEFAULT 0",
+  "ALTER TABLE products ADD COLUMN self_retain_quantity INTEGER DEFAULT 0",
+  "ALTER TABLE group_buys ADD COLUMN delivered_at DATETIME",
+  "CREATE TABLE IF NOT EXISTS platform_revenue (id INTEGER PRIMARY KEY AUTOINCREMENT, group_buy_id INTEGER NOT NULL UNIQUE, diff_cents INTEGER NOT NULL DEFAULT 0, recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (group_buy_id) REFERENCES group_buys(id))",
+  "ALTER TABLE products ADD COLUMN split_remaining_quantity INTEGER",
+  "ALTER TABLE order_items ADD COLUMN purchase_type TEXT DEFAULT 'whole'",
+  "ALTER TABLE products ADD COLUMN product_type TEXT DEFAULT 'fixed'",
+  "ALTER TABLE group_buys ADD COLUMN payment_remark TEXT DEFAULT ''",
+  "ALTER TABLE users ADD COLUMN payment_qr TEXT DEFAULT ''",
 ];
 
 for (const sql of migrations) {

@@ -12,6 +12,11 @@ router.post('/register', (req, res) => {
       return res.status(400).json({ error: '学号和昵称必填' });
     }
 
+    // 学号格式校验：B/F + 8位数字
+    if (!/^(B|F)\d{8}$/.test(student_id)) {
+      return res.status(400).json({ error: '学号格式：B/F + 8位数字（如 B25011215）' });
+    }
+
     // 检查是否已存在
     const existing = db.prepare('SELECT id FROM users WHERE student_id = ?').get(student_id);
     if (existing) {
@@ -77,16 +82,17 @@ router.get('/me', (req, res) => {
 router.put('/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { nickname, avatar, dorm_building } = req.body;
+    const { nickname, avatar, dorm_building, payment_qr } = req.body;
 
     const stmt = db.prepare(`
       UPDATE users SET nickname = COALESCE(?, nickname),
       avatar = COALESCE(?, avatar),
-      dorm_building = COALESCE(?, dorm_building)
+      dorm_building = COALESCE(?, dorm_building),
+      payment_qr = COALESCE(?, payment_qr)
       WHERE id = ?
     `);
 
-    stmt.run(nickname, avatar, dorm_building, id);
+    stmt.run(nickname, avatar, dorm_building, payment_qr, id);
 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
     res.json(user);

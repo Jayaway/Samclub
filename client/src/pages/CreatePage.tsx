@@ -13,21 +13,26 @@ interface CreatePageProps {
 
 interface AddedProduct {
   id: string;
+  product_type: 'fixed' | 'custom';
   name: string;
   original_price: number;
-  total_quantity: number;
+  quantity: number; // 整份数量
   remaining_quantity: number;
-  is_split_allowed: boolean;
-  is_frozen: boolean;
+  allow_split: boolean;
+  split_unit: string; // 拆分单位（片/个）
+  split_quantity_per_whole: number; // 每整份含拆分单位数
+  split_price_per_unit: number; // 拆分单价（分）
+  self_retain_quantity: number; // 发起人自留拆分单位数（不计入可售库存）
+  needs_cold_chain: boolean;
   unit_price: number;
 }
 
 const sampleProducts = [
-  { id: '1', name: '山姆有机草莓 500g', original_price: 28.9, total_quantity: 5, is_frozen: true, is_split_allowed: false },
-  { id: '2', name: '山姆瑞士卷蛋糕', original_price: 39.9, total_quantity: 4, is_frozen: false, is_split_allowed: true },
-  { id: '3', name: '山姆鲜牛奶 1L', original_price: 14.9, total_quantity: 6, is_frozen: true, is_split_allowed: false },
-  { id: '4', name: '山姆坚果混合装 750g', original_price: 59.9, total_quantity: 5, is_frozen: false, is_split_allowed: true },
-  { id: '5', name: '山姆藤椒味薯片 270g', original_price: 18.9, total_quantity: 8, is_frozen: false, is_split_allowed: true },
+  { id: '1', name: '山姆有机草莓 500g', original_price: 28.9, quantity: 5, needs_cold_chain: false, allow_split: false, split_unit: '颗', split_quantity_per_whole: 1, split_price_per_unit: 2890, self_retain_quantity: 0, product_type: 'fixed' as const },
+  { id: '2', name: '山姆瑞士卷蛋糕', original_price: 39.9, quantity: 4, needs_cold_chain: false, allow_split: true, split_unit: '片', split_quantity_per_whole: 6, split_price_per_unit: 665, self_retain_quantity: 0, product_type: 'fixed' as const },
+  { id: '3', name: '山姆鲜牛奶 1L', original_price: 14.9, quantity: 6, needs_cold_chain: true, allow_split: false, split_unit: '盒', split_quantity_per_whole: 1, split_price_per_unit: 1490, self_retain_quantity: 0, product_type: 'fixed' as const },
+  { id: '4', name: '山姆坚果混合装 750g', original_price: 59.9, quantity: 5, needs_cold_chain: false, allow_split: true, split_unit: '包', split_quantity_per_whole: 1, split_price_per_unit: 5990, self_retain_quantity: 0, product_type: 'fixed' as const },
+  { id: '5', name: '山姆藤椒味薯片 270g', original_price: 18.9, quantity: 8, needs_cold_chain: false, allow_split: true, split_unit: '袋', split_quantity_per_whole: 1, split_price_per_unit: 1890, self_retain_quantity: 0, product_type: 'fixed' as const },
 ];
 
 export default function CreatePage({ userId, onBack, onCreated }: CreatePageProps) {
@@ -43,6 +48,8 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
   const [addedProducts, setAddedProducts] = useState<AddedProduct[]>([]);
   const [showPicker, setShowPicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [pickerTab, setPickerTab] = useState<'fixed' | 'custom'>('fixed');
+  const [customForm, setCustomForm] = useState({ name: '', original_price: '', quantity: '1', needs_cold_chain: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [duplicateWarning, setDuplicateWarning] = useState<{ message: string; groups: { id: number; title: string; deadline: string; currentAmount?: number; targetAmount?: number }[] } | null>(null);
@@ -59,20 +66,63 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
     setAddedProducts((prev) => prev.filter((p) => p.id !== id));
   };
 
+  const updateSelfRetain = (id: string, delta: number) => {
+    setAddedProducts((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const maxRetain = p.allow_split ? p.quantity * p.split_quantity_per_whole : 0;
+        const newVal = Math.max(0, Math.min(maxRetain, p.self_retain_quantity + delta));
+        return { ...p, self_retain_quantity: newVal };
+      })
+    );
+  };
+
   const addProduct = (p: typeof sampleProducts[0]) => {
     if (!addedProducts.find((ap) => ap.id === p.id)) {
-      const unit_price = parseFloat((p.original_price / p.total_quantity).toFixed(2));
+      const unit_price = parseFloat((p.original_price / p.quantity).toFixed(2));
       setAddedProducts((prev) => [...prev, {
         id: p.id,
+        product_type: 'fixed',
         name: p.name,
         original_price: p.original_price,
-        total_quantity: p.total_quantity,
-        remaining_quantity: p.total_quantity,
-        is_split_allowed: p.is_split_allowed,
-        is_frozen: p.is_frozen,
+        quantity: p.quantity,
+        remaining_quantity: p.quantity,
+        allow_split: p.allow_split,
+        split_unit: p.split_unit,
+        split_quantity_per_whole: p.split_quantity_per_whole,
+        split_price_per_unit: p.split_price_per_unit,
+        self_retain_quantity: p.self_retain_quantity,
+        needs_cold_chain: p.needs_cold_chain,
         unit_price,
       }]);
     }
+    setShowPicker(false);
+  };
+
+  const addCustomProduct = () => {
+    if (!customForm.name.trim()) return;
+    const price = parseFloat(customForm.original_price);
+    if (!price || price <= 0) return;
+    const qty = parseInt(customForm.quantity) || 1;
+    const id = `custom_${Date.now()}`;
+    const unit_price = parseFloat((price / qty).toFixed(2));
+    setAddedProducts((prev) => [...prev, {
+      id,
+      product_type: 'custom',
+      name: customForm.name.trim(),
+      original_price: price,
+      quantity: qty,
+      remaining_quantity: qty,
+      allow_split: false,
+      split_unit: '',
+      split_quantity_per_whole: 0,
+      split_price_per_unit: 0,
+      self_retain_quantity: 0,
+      needs_cold_chain: customForm.needs_cold_chain,
+      unit_price,
+    }]);
+    setCustomForm({ name: '', original_price: '', quantity: '1', needs_cold_chain: false });
+    setPickerTab('fixed');
     setShowPicker(false);
   };
 
@@ -92,12 +142,17 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
         deadline: deadline.toISOString(),
         pickup_location: location.trim(),
         products: addedProducts.map(p => ({
+          product_type: p.product_type,
           name: p.name,
           original_price: p.original_price,
-          total_quantity: p.total_quantity,
-          remaining_quantity: p.remaining_quantity,
-          is_split_allowed: p.is_split_allowed,
-          is_frozen: p.is_frozen,
+          quantity: p.quantity,
+          remaining_quantity: p.quantity,
+          allow_split: p.allow_split,
+          split_unit: p.split_unit,
+          split_quantity_per_whole: p.split_quantity_per_whole,
+          split_price_per_unit: p.split_price_per_unit,
+          self_retain_quantity: p.self_retain_quantity,
+          needs_cold_chain: p.needs_cold_chain,
           unit_price: p.unit_price,
         })),
       });
@@ -122,6 +177,17 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
     if (addedProducts.length === 0) {
       setError('请添加至少一个商品');
       return;
+    }
+
+    // 拆分单价校验：split_price_per_unit ≤ original_price / split_quantity_per_whole
+    for (const p of addedProducts) {
+      if (p.allow_split) {
+        const maxUnitPrice = (p.original_price / p.split_quantity_per_whole) * 100; // 转为分
+        if (p.split_price_per_unit > maxUnitPrice) {
+          setError(`${p.name}的拆分单价不能高于整份均摊单价¥${(maxUnitPrice / 100).toFixed(2)}`);
+          return;
+        }
+      }
     }
 
     // 重复检查：取所有商品名前4字作为关键词，聚合去重
@@ -347,17 +413,39 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
                   <div className="flex-1 min-w-0">
                     <div className="text-[#0c0c0c] font-semibold text-sm truncate">{p.name}</div>
                     <div className="text-zinc-400 text-xs mt-0.5 flex items-center gap-1 flex-wrap">
-                      <span>¥{p.original_price} × {p.total_quantity}个</span>
-                      {p.is_split_allowed && (
-                        <span className="text-cyan-500 text-[10px] bg-cyan-50 px-1.5 py-0.5 rounded-full">可拆卖</span>
+                      <span>¥{p.original_price} × {p.quantity}个</span>
+                      {p.allow_split && (
+                        <span className="text-cyan-500 text-[10px] bg-cyan-50 px-1.5 py-0.5 rounded-full">可拆{p.split_quantity_per_whole}{p.split_unit}/份</span>
                       )}
-                      {p.is_frozen && (
+                      {p.needs_cold_chain && (
                         <span className="flex items-center gap-0.5 text-sky-600 text-[10px] bg-sky-50 px-1.5 py-0.5 rounded-full border border-sky-200 font-medium">
                           <Snowflake size={9} className="text-sky-500" />
-                          生鲜
+                          冰鲜
                         </span>
                       )}
                     </div>
+                    {/* 自留拆分单位编辑 - 仅允许拆分的商品显示 */}
+                    {p.allow_split && (
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <span className="text-amber-600 text-[10px]">自留:</span>
+                        <button
+                          onClick={() => updateSelfRetain(p.id, -1)}
+                          disabled={p.self_retain_quantity === 0}
+                          className="w-5 h-5 rounded-full bg-amber-100 text-amber-600 text-xs font-bold flex items-center justify-center disabled:opacity-30"
+                        >-</button>
+                        <span className="text-amber-600 text-xs font-bold w-6 text-center">
+                          {p.self_retain_quantity}{p.split_unit}
+                        </span>
+                        <button
+                          onClick={() => updateSelfRetain(p.id, 1)}
+                          disabled={p.self_retain_quantity >= p.quantity * p.split_quantity_per_whole}
+                          className="w-5 h-5 rounded-full bg-amber-100 text-amber-600 text-xs font-bold flex items-center justify-center disabled:opacity-30"
+                        >+</button>
+                        <span className="text-zinc-400 text-[10px]">
+                          (共{p.quantity * p.split_quantity_per_whole}{p.split_unit}，自留后可售{p.quantity * p.split_quantity_per_whole - p.self_retain_quantity}{p.split_unit})
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <span className="text-orange-500 font-black text-sm">
                     ¥{p.original_price.toFixed(1)}
@@ -471,7 +559,7 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
               style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 100px)' }}
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-[#0c0c0c] font-black text-lg">选择商品</h3>
+                <h3 className="text-[#0c0c0c] font-black text-lg">添加商品</h3>
                 <motion.button
                   onClick={() => setShowPicker(false)}
                   whileTap={{ scale: 0.9 }}
@@ -481,42 +569,127 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
                   <X size={16} />
                 </motion.button>
               </div>
-              <div className="flex flex-col gap-2 max-h-80 overflow-y-auto">
-                {sampleProducts.map((p, i) => {
-                  const added = !!addedProducts.find((ap) => ap.id === p.id);
-                  return (
-                    <motion.button
-                      key={p.id}
-                      onClick={() => !added && addProduct(p)}
-                      disabled={added}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ ...springConfig, delay: i * 0.05 }}
-                      whileHover={!added ? { scale: 1.02, backgroundColor: 'rgba(6, 182, 212, 0.1)' } : {}}
-                      whileTap={!added ? { scale: 0.98 } : {}}
-                      className={`flex items-center justify-between px-4 py-3 rounded-xl text-left ${
-                        added ? 'bg-zinc-50 opacity-50' : 'bg-zinc-50'
+
+              {/* 商品类型切换 */}
+              <div className="flex gap-2 mb-3">
+                <button
+                  onClick={() => setPickerTab('fixed')}
+                  className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${
+                    pickerTab === 'fixed'
+                      ? 'bg-cyan-500 text-white shadow-md shadow-cyan-500/30'
+                      : 'bg-zinc-100 text-zinc-500'
+                  }`}
+                >
+                  固定商品
+                </button>
+                <button
+                  onClick={() => setPickerTab('custom')}
+                  className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${
+                    pickerTab === 'custom'
+                      ? 'bg-amber-500 text-white shadow-md shadow-amber-500/30'
+                      : 'bg-zinc-100 text-zinc-500'
+                  }`}
+                >
+                  自定义商品
+                </button>
+              </div>
+
+              {pickerTab === 'fixed' ? (
+                <div className="flex flex-col gap-2 max-h-80 overflow-y-auto">
+                  {sampleProducts.map((p, i) => {
+                    const added = !!addedProducts.find((ap) => ap.id === p.id);
+                    return (
+                      <motion.button
+                        key={p.id}
+                        onClick={() => !added && addProduct(p)}
+                        disabled={added}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ ...springConfig, delay: i * 0.05 }}
+                        whileHover={!added ? { scale: 1.02, backgroundColor: 'rgba(6, 182, 212, 0.1)' } : {}}
+                        whileTap={!added ? { scale: 0.98 } : {}}
+                        className={`flex items-center justify-between px-4 py-3 rounded-xl text-left ${
+                          added ? 'bg-zinc-50 opacity-50' : 'bg-zinc-50'
+                        }`}
+                      >
+                        <div>
+                          <span className="text-[#0c0c0c] font-medium text-sm block">{p.name}</span>
+                          <span className="text-zinc-400 text-xs flex items-center gap-1 flex-wrap">
+                            <span>¥{p.original_price} × {p.quantity}个</span>
+                            {p.allow_split && (
+                              <span className="text-cyan-500">可拆{p.split_quantity_per_whole}{p.split_unit}/份</span>
+                            )}
+                            {p.needs_cold_chain && (
+                              <span className="flex items-center gap-0.5 text-sky-600">
+                                <Snowflake size={9} className="text-sky-500" />
+                                冰鲜
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        <span className={`font-black text-sm ${added ? 'text-zinc-400' : 'text-orange-500'}`}>
+                          {added ? '已添加' : `¥${p.original_price}`}
+                        </span>
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3 max-h-80 overflow-y-auto">
+                  <div>
+                    <label className="text-zinc-400 text-xs font-medium mb-1 block">商品名</label>
+                    <input
+                      type="text"
+                      value={customForm.name}
+                      onChange={(e) => setCustomForm((f) => ({ ...f, name: e.target.value }))}
+                      placeholder="如：山姆智利车厘子 500g"
+                      className="w-full bg-zinc-50 border border-zinc-200 text-[#0c0c0c] placeholder-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-400"
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="text-zinc-400 text-xs font-medium mb-1 block">总价（元）</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={customForm.original_price}
+                        onChange={(e) => setCustomForm((f) => ({ ...f, original_price: e.target.value }))}
+                        placeholder="0.00"
+                        className="w-full bg-zinc-50 border border-zinc-200 text-[#0c0c0c] placeholder-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-400"
+                      />
+                    </div>
+                    <div className="w-20">
+                      <label className="text-zinc-400 text-xs font-medium mb-1 block">份数</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={customForm.quantity}
+                        onChange={(e) => setCustomForm((f) => ({ ...f, quantity: e.target.value }))}
+                        className="w-full bg-zinc-50 border border-zinc-200 text-[#0c0c0c] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-cyan-400 text-center"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCustomForm((f) => ({ ...f, needs_cold_chain: !f.needs_cold_chain }))}
+                      className={`w-5 h-5 rounded flex items-center justify-center transition-all ${
+                        customForm.needs_cold_chain ? 'bg-sky-500 text-white' : 'bg-zinc-200 text-zinc-400'
                       }`}
                     >
-                      <div>
-                        <span className="text-[#0c0c0c] font-medium text-sm block">{p.name}</span>
-                        <span className="text-zinc-400 text-xs flex items-center gap-1 flex-wrap">
-                          <span>¥{p.original_price} × {p.total_quantity}个</span>
-                          {p.is_frozen && (
-                            <span className="flex items-center gap-0.5 text-sky-600">
-                              <Snowflake size={9} className="text-sky-500" />
-                              生鲜
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                      <span className={`font-black text-sm ${added ? 'text-zinc-400' : 'text-orange-500'}`}>
-                        {added ? '已添加' : `¥${p.original_price}`}
-                      </span>
-                    </motion.button>
-                  );
-                })}
-              </div>
+                      {customForm.needs_cold_chain && <Snowflake size={12} />}
+                    </button>
+                    <span className="text-zinc-500 text-xs">需冰鲜配送</span>
+                  </div>
+                  <motion.button
+                    onClick={addCustomProduct}
+                    whileTap={{ scale: 0.97 }}
+                    className="w-full py-3 rounded-xl bg-amber-500 text-white font-bold text-sm shadow-md shadow-amber-500/30 disabled:opacity-40"
+                    disabled={!customForm.name.trim() || !customForm.original_price}
+                  >
+                    添加自定义商品
+                  </motion.button>
+                </div>
+              )}
             </motion.div>
           </>
         )}
