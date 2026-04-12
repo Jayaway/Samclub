@@ -40,6 +40,10 @@ db.exec(`
     is_split_allowed INTEGER DEFAULT 0,
     is_frozen INTEGER DEFAULT 0,
     unit_price REAL NOT NULL,
+    allow_split INTEGER DEFAULT 0,
+    split_unit TEXT DEFAULT '',
+    split_quantity INTEGER DEFAULT 0,
+    split_price_per_unit REAL DEFAULT 0,
     FOREIGN KEY (group_buy_id) REFERENCES group_buys(id)
   );
 
@@ -80,5 +84,18 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
 `);
+
+// 迁移：添加新字段（对已有表安全执行）
+const migrations = [
+  "ALTER TABLE products ADD COLUMN allow_split INTEGER DEFAULT 0",
+  "ALTER TABLE products ADD COLUMN split_unit TEXT DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN split_quantity INTEGER DEFAULT 0",
+  "ALTER TABLE products ADD COLUMN split_price_per_unit REAL DEFAULT 0",
+  "ALTER TABLE users ADD COLUMN phone TEXT DEFAULT ''",
+];
+
+for (const sql of migrations) {
+  try { db.exec(sql); } catch (_) { /* column already exists */ }
+}
 
 export default db;

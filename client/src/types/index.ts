@@ -1,4 +1,4 @@
-export type Page = 'login' | 'square' | 'shop' | 'create' | 'detail';
+export type Page = 'login' | 'square' | 'shop' | 'create' | 'detail' | 'profile' | 'my';
 
 export type GroupStatus = 'active' | 'completed' | 'expired';
 
@@ -7,6 +7,8 @@ export interface Participant {
   name: string;
   avatar: string;
   amount: number;
+  paid?: boolean;
+  isLeader?: boolean;
 }
 
 export interface GroupBuy {
@@ -52,4 +54,5 @@ export interface User {
   nickname: string;
   avatar?: string;
   dorm_building?: string;
+  phone?: string;
 }

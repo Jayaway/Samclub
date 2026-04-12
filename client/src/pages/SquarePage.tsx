@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Flame, Clock, CheckCircle, XCircle, Plus, MapPin, Users, Loader2 } from 'lucide-react';
 import { GroupBuy, Page } from '../types';
@@ -213,7 +214,17 @@ function GroupCard({ group, onClick, index }: { group: GroupBuy; onClick: () => 
 }
 
 export default function SquarePage({ groups, loading, onNavigate, onRefresh }: SquarePageProps) {
+  const [selectedTab, setSelectedTab] = useState<'all' | 'active' | 'completed'>('all');
   const activeCount = groups.filter((g) => g.status === 'active').length;
+  const completedCount = groups.filter((g) => g.status === 'completed').length;
+
+  // Filter groups based on selected tab
+  const filteredGroups = groups.filter((g) => {
+    if (selectedTab === 'all') return true;
+    if (selectedTab === 'active') return g.status === 'active';
+    if (selectedTab === 'completed') return g.status === 'completed';
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-[#f4f6fa] flex flex-col">
@@ -279,18 +290,23 @@ export default function SquarePage({ groups, loading, onNavigate, onRefresh }: S
           transition={{ ...springConfig, delay: 0.3 }}
           className="flex gap-2 mt-3"
         >
-          {['全部', '进行中', '已完成'].map((tab, i) => (
+          {[
+            { key: 'all', label: '全部', count: groups.length },
+            { key: 'active', label: '进行中', count: activeCount },
+            { key: 'completed', label: '已完成', count: completedCount },
+          ].map((tab) => (
             <motion.button
-              key={tab}
+              key={tab.key}
+              onClick={() => setSelectedTab(tab.key as 'all' | 'active' | 'completed')}
               whileTap={{ scale: 0.95 }}
               transition={springSnappy}
               className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-                i === 0
+                selectedTab === tab.key
                   ? 'bg-cyan-500 text-white'
                   : 'bg-white/10 text-white/50 hover:bg-white/15'
               }`}
             >
-              {tab}
+              {tab.label}({tab.count})
             </motion.button>
           ))}
         </motion.div>
@@ -322,23 +338,25 @@ export default function SquarePage({ groups, loading, onNavigate, onRefresh }: S
           </div>
         </motion.div>
 
-        {loading && groups.length === 0 && (
+        {loading && filteredGroups.length === 0 && (
           <div className="flex items-center justify-center py-12">
             <Loader2 size={32} className="animate-spin text-cyan-500" />
           </div>
         )}
 
-        {!loading && groups.length === 0 && (
+        {!loading && filteredGroups.length === 0 && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="flex flex-col items-center justify-center py-12 text-zinc-400"
           >
-            <p className="text-sm mb-4">暂无拼单，快来发起第一个吧！</p>
+            <p className="text-sm mb-4">
+              {selectedTab === 'all' ? '暂无拼单，快来发起第一个吧！' : '暂无{selectedTab === "active" ? "进行中" : "已完成"}的拼单'}
+            </p>
           </motion.div>
         )}
 
-        {groups.map((group, index) => (
+        {filteredGroups.map((group, index) => (
           <GroupCard
             key={group.id}
             group={group}

@@ -7,14 +7,16 @@ import SquarePage from './pages/SquarePage';
 import ShopPage from './pages/ShopPage';
 import CreatePage from './pages/CreatePage';
 import DetailPage from './pages/DetailPage';
+import ProfilePage from './pages/ProfilePage';
+import MyPage from './pages/MyPage';
 import BottomNav from './components/BottomNav';
 
-const SHOW_NAV_PAGES: Page[] = ['square', 'create'];
+const SHOW_NAV_PAGES: Page[] = ['square', 'create', 'my', 'profile'];
 
 // Map backend status to frontend status
 function mapStatus(status: string): 'active' | 'completed' | 'expired' {
-  if (status === '进行中') return 'active';
-  if (status === '已完成') return 'completed';
+  if (status === '进行中' || status === '拼单中') return 'active';
+  if (status === '已完成' || status === '已下单' || status === '已送达' || status === '待付款') return 'completed';
   return 'expired';
 }
 
@@ -74,14 +76,14 @@ export default function App() {
     }
   }, [user, loadGroups]);
 
-  const handleLogin = async (studentId: string, nickname: string) => {
+  const handleLogin = async (studentId: string, nickname: string, dormBuilding?: string) => {
     try {
       let loggedInUser: User;
       try {
         loggedInUser = await login(studentId);
       } catch {
         // Login failed, try register
-        loggedInUser = await register(studentId, nickname);
+        loggedInUser = await register(studentId, nickname, dormBuilding);
       }
       saveUser(loggedInUser);
       setUser(loggedInUser);
@@ -161,6 +163,32 @@ export default function App() {
           userId={user.id}
           onBack={() => navigate('square')}
           onJoin={() => navigate('shop', selectedGroup.id)}
+        />
+        {showNav && <BottomNav current={page} onNavigate={navigate} />}
+      </>
+    );
+  }
+
+  if (page === 'my') {
+    return (
+      <>
+        <MyPage
+          userId={user.id}
+          onBack={() => navigate('square')}
+          onNavigate={navigate}
+        />
+        {showNav && <BottomNav current={page} onNavigate={navigate} />}
+      </>
+    );
+  }
+
+  if (page === 'profile') {
+    return (
+      <>
+        <ProfilePage
+          user={user}
+          onLogout={handleLogout}
+          onNavigate={navigate}
         />
         {showNav && <BottomNav current={page} onNavigate={navigate} />}
       </>

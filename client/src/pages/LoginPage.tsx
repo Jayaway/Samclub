@@ -1,28 +1,82 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ShoppingCart, Zap, Users, TrendingUp } from 'lucide-react';
+import { ShoppingCart, Zap, Users, TrendingUp, Camera, X } from 'lucide-react';
 import { springConfig, springBouncy } from '../utils/animations';
 
 interface LoginPageProps {
-  onLogin: (studentId: string, nickname: string) => Promise<void>;
+  onLogin: (studentId: string, nickname: string, dormBuilding?: string, phone?: string, avatarUrl?: string) => Promise<void>;
 }
 
 export default function LoginPage({ onLogin }: LoginPageProps) {
   const [studentId, setStudentId] = useState('');
   const [nickname, setNickname] = useState('');
+  const [dormBuilding, setDormBuilding] = useState('');
+  const [phone, setPhone] = useState('');
+  const [avatar, setAvatar] = useState<string | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [studentIdError, setStudentIdError] = useState('');
+  const [phoneError, setPhoneError] = useState('');
+
+  // 校验学号格式（8-10位，可包含字母和数字）
+  const validateStudentId = (id: string) => {
+    if (!id.trim()) return '请填写学号';
+    if (!/^[A-Za-z0-9]{8,10}$/.test(id.trim())) return '学号应为8-10位字母或数字';
+    return '';
+  };
+
+  // 校验手机号格式（可选，11位数字）
+  const validatePhone = (p: string) => {
+    if (p && !/^1[3-9]\d{9}$/.test(p.trim())) return '手机号格式不正确';
+    return '';
+  };
+
+  // 处理头像上传
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        setError('头像图片不能超过2MB');
+        return;
+      }
+      setAvatarFile(file);
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setAvatar(ev.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!studentId.trim() || !nickname.trim()) {
-      setError('请填写学号和昵称');
+
+    // 校验学号
+    const sidError = validateStudentId(studentId);
+    if (sidError) {
+      setStudentIdError(sidError);
       return;
     }
+    setStudentIdError('');
+
+    // 校验手机号
+    const phError = validatePhone(phone);
+    if (phError) {
+      setPhoneError(phError);
+      return;
+    }
+    setPhoneError('');
+
+    if (!nickname.trim()) {
+      setError('请填写昵称');
+      return;
+    }
+
     setError('');
     setLoading(true);
     try {
-      await onLogin(studentId.trim(), nickname.trim());
+      await onLogin(studentId.trim(), nickname.trim(), dormBuilding.trim(), phone.trim() || undefined, avatar || undefined);
     } catch (err: any) {
       setError(err.message || '登录失败');
     } finally {
@@ -175,7 +229,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               平台统一下单 · 满 <span className="text-amber-400 font-bold">¥99</span> 免运费
             </motion.p>
           </motion.div>
-        </motion.div>
+        </div>
 
         <motion.div
           initial={{ y: 50, opacity: 0 }}
@@ -211,21 +265,66 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           )}
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+            {/* 头像上传 */}
+            <motion.div
+              initial={{ x: -30, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ ...springConfig, delay: 0.55 }}
+              className="flex flex-col items-center mb-2"
+            >
+              <div className="relative">
+                <div className="w-20 h-20 rounded-full bg-white/10 border-2 border-dashed border-white/20 overflow-hidden flex items-center justify-center">
+                  {avatar ? (
+                    <img src={avatar} alt="头像预览" className="w-full h-full object-cover" />
+                  ) : (
+                    <Camera size={24} className="text-white/30" />
+                  )}
+                </div>
+                <label className="absolute inset-0 cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarChange}
+                    className="hidden"
+                  />
+                  <div className="absolute inset-0 bg-black/50 rounded-full opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <Camera size={20} className="text-white" />
+                  </div>
+                </label>
+                {avatar && (
+                  <button
+                    type="button"
+                    onClick={() => { setAvatar(null); setAvatarFile(null); }}
+                    className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+              <span className="text-white/30 text-[10px] mt-1.5">点击上传头像</span>
+            </motion.div>
+
             <motion.div
               initial={{ x: -30, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               transition={{ ...springConfig, delay: 0.6 }}
             >
               <label className="text-white/50 text-xs font-medium block mb-1.5 tracking-wider uppercase">
-                学号
+                学号 <span className="text-red-400">*</span>
               </label>
               <input
                 type="text"
                 value={studentId}
-                onChange={(e) => setStudentId(e.target.value)}
+                onChange={(e) => { setStudentId(e.target.value); setStudentIdError(''); }}
                 placeholder="输入你的学号"
-                className="w-full bg-white/10 border border-white/15 text-white placeholder-white/25 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/60 focus:bg-white/15 transition-all"
+                maxLength={10}
+                className={`w-full bg-white/10 border ${
+                  studentIdError ? 'border-red-500/50' : 'border-white/15'
+                } text-white placeholder-white/25 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/60 focus:bg-white/15 transition-all`}
               />
+              {studentIdError && (
+                <p className="text-red-400 text-[10px] mt-1">{studentIdError}</p>
+              )}
             </motion.div>
             <motion.div
               initial={{ x: -30, opacity: 0 }}
@@ -243,13 +342,51 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                 className="w-full bg-white/10 border border-white/15 text-white placeholder-white/25 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/60 focus:bg-white/15 transition-all"
               />
             </motion.div>
+            <motion.div
+              initial={{ x: -30, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ ...springConfig, delay: 0.7 }}
+            >
+              <label className="text-white/50 text-xs font-medium block mb-1.5 tracking-wider uppercase">
+                宿舍地址 <span className="text-white/30 normal-case">(如 3栋205室)</span>
+              </label>
+              <input
+                type="text"
+                value={dormBuilding}
+                onChange={(e) => setDormBuilding(e.target.value)}
+                placeholder="新用户注册时填写"
+                className="w-full bg-white/10 border border-white/15 text-white placeholder-white/25 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/60 focus:bg-white/15 transition-all"
+              />
+            </motion.div>
+            <motion.div
+              initial={{ x: -30, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ ...springConfig, delay: 0.75 }}
+            >
+              <label className="text-white/50 text-xs font-medium block mb-1.5 tracking-wider uppercase">
+                手机号 <span className="text-white/30 normal-case">(可选)</span>
+              </label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => { setPhone(e.target.value); setPhoneError(''); }}
+                placeholder="用于接收取货通知"
+                maxLength={11}
+                className={`w-full bg-white/10 border ${
+                  phoneError ? 'border-red-500/50' : 'border-white/15'
+                } text-white placeholder-white/25 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/60 focus:bg-white/15 transition-all`}
+              />
+              {phoneError && (
+                <p className="text-red-400 text-[10px] mt-1">{phoneError}</p>
+              )}
+            </motion.div>
 
             <motion.button
               type="submit"
               disabled={loading}
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              transition={{ ...springConfig, delay: 0.7 }}
+              transition={{ ...springConfig, delay: 0.75 }}
               whileHover={{ scale: loading ? 1 : 1.02 }}
               whileTap={{ scale: loading ? 1 : 0.96 }}
               className="mt-2 w-full bg-gradient-to-r from-cyan-500 to-sky-500 hover:from-cyan-400 hover:to-sky-400 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl text-base shadow-lg shadow-cyan-500/30"

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Grid2x2 as Grid2X2, PlusSquare, User } from 'lucide-react';
+import { Grid2x2 as Grid2X2, PlusSquare, User, ShoppingBag } from 'lucide-react';
 import { Page } from '../types';
 import { springConfig, springSnappy } from '../utils/animations';
 
@@ -11,7 +11,8 @@ interface BottomNavProps {
 const tabs = [
   { page: 'square' as Page, icon: Grid2X2, label: '广场' },
   { page: 'create' as Page, icon: PlusSquare, label: '发起' },
-  { page: 'login' as Page, icon: User, label: '我的' },
+  { page: 'my' as Page, icon: ShoppingBag, label: '我的拼单' },
+  { page: 'profile' as Page, icon: User, label: '我的' },
 ];
 
 export default function BottomNav({ current, onNavigate }: BottomNavProps) {

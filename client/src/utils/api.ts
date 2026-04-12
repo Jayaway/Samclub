@@ -90,7 +90,7 @@ export async function login(studentId: string): Promise<User> {
   return res.json();
 }
 
-export async function register(studentId: string, nickname: string, dormBuilding: string = ''): Promise<User> {
+export async function register(studentId: string, nickname: string, dormBuilding: string = '', phone?: string, avatar?: string): Promise<User> {
   const res = await fetch(`${API_BASE}/users/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -98,6 +98,8 @@ export async function register(studentId: string, nickname: string, dormBuilding
       student_id: studentId,
       nickname,
       dorm_building: dormBuilding,
+      phone,
+      avatar,
     }),
   });
   if (!res.ok) {
@@ -160,6 +162,12 @@ export async function updateGroupBuyStatus(id: number, status: string): Promise<
 
 export async function deleteGroupBuy(id: number): Promise<void> {
   await fetch(`${API_BASE}/group-buys/${id}`, { method: 'DELETE' });
+}
+
+export async function checkDuplicateGroupBuy(keyword: string, deadline: string): Promise<{ similar: { id: number; title: string; deadline: string }[] }> {
+  const params = new URLSearchParams({ check_keyword: keyword, check_deadline: deadline });
+  const res = await fetch(`${API_BASE}/group-buys?${params}`);
+  return res.json();
 }
 
 // Order Items

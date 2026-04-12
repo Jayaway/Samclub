@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, MapPin, Clock, Plus, X, ChevronRight, Sparkles, Loader2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Plus, X, ChevronRight, Sparkles, Loader2, AlertTriangle, Snowflake } from 'lucide-react';
 import { springConfig, springBouncy, springSnappy, modalVariants, overlayVariants } from '../utils/animations';
-import { createGroupBuy } from '../utils/api';
+import { createGroupBuy, checkDuplicateGroupBuy } from '../utils/api';
+import WheelPicker from '../components/WheelPicker';
 
 interface CreatePageProps {
   userId: number;
@@ -31,19 +32,26 @@ const sampleProducts = [
 
 export default function CreatePage({ userId, onBack, onCreated }: CreatePageProps) {
   const [location, setLocation] = useState('');
-  const [deadline, setDeadline] = useState('');
-  const [addedProducts, setAddedProducts] = useState<AddedProduct[]>([]);
-  const [showPicker, setShowPicker] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  // Set default deadline to 2 days from now
-  useState(() => {
+  const [deadline, setDeadline] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 2);
     d.setMinutes(Math.round(d.getMinutes() / 15) * 15);
-    setDeadline(d.toISOString().slice(0, 16));
+    d.setSeconds(0);
+    d.setMilliseconds(0);
+    return d;
   });
+  const [addedProducts, setAddedProducts] = useState<AddedProduct[]>([]);
+  const [showPicker, setShowPicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [duplicateWarning, setDuplicateWarning] = useState<{ message: string; groups: { id: number; title: string; deadline: string; currentAmount?: number; targetAmount?: number }[] } | null>(null);
+  const [pendingSubmit, setPendingSubmit] = useState(false);
+
+  // Format deadline for display
+  const formatDeadlineDisplay = (d: Date) => {
+    return `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
 
   const total = addedProducts.reduce((s, p) => s + p.original_price, 0);
 
@@ -68,25 +76,12 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
     setShowPicker(false);
   };
 
-  const handleSubmit = async () => {
-    if (!location.trim()) {
-      setError('请填写取货地点');
-      return;
-    }
-    if (!deadline) {
-      setError('请选择截止时间');
-      return;
-    }
-    if (addedProducts.length === 0) {
-      setError('请添加至少一个商品');
-      return;
-    }
-
+  const doSubmit = async () => {
     setError('');
     setLoading(true);
+    setPendingSubmit(false);
 
     try {
-      // Title is first product name (or "xxx等" if multiple)
       const title = addedProducts.length === 1
         ? addedProducts[0].name
         : `${addedProducts[0].name}等`;
@@ -94,7 +89,7 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
       await createGroupBuy({
         creator_id: userId,
         title,
-        deadline: new Date(deadline).toISOString(),
+        deadline: deadline.toISOString(),
         pickup_location: location.trim(),
         products: addedProducts.map(p => ({
           name: p.name,
@@ -113,6 +108,52 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = async () => {
+    if (!location.trim()) {
+      setError('请填写取货地点');
+      return;
+    }
+    if (!deadline) {
+      setError('请选择截止时间');
+      return;
+    }
+    if (addedProducts.length === 0) {
+      setError('请添加至少一个商品');
+      return;
+    }
+
+    // 重复检查：取所有商品名前4字作为关键词，聚合去重
+    const allKeywords = [...new Set(addedProducts.map(p => p.name.slice(0, 4)))];
+    try {
+      const allSimilar: { id: number; title: string; deadline: string; currentAmount?: number; targetAmount?: number }[] = [];
+      for (const keyword of allKeywords) {
+        const { similar } = await checkDuplicateGroupBuy(keyword, deadline.toISOString());
+        if (similar) {
+          for (const s of similar) {
+            if (!allSimilar.find(x => x.id === s.id)) {
+              allSimilar.push(s);
+            }
+          }
+        }
+      }
+      if (allSimilar.length > 0) {
+        const first = allSimilar[0];
+        const more = allSimilar.length > 1 ? `等${allSimilar.length}个` : '';
+        const deadlineStr = first.deadline ? `截止${new Date(first.deadline).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}` : '';
+        setDuplicateWarning({
+          message: `广场已存在同类拼单${more}："${first.title}"${deadlineStr}，是否仍要发起？`,
+          groups: allSimilar,
+        });
+        setPendingSubmit(true);
+        return;
+      }
+    } catch (_) {
+      // 检查失败不阻止创建
+    }
+
+    await doSubmit();
   };
 
   return (
@@ -158,7 +199,7 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
         </motion.div>
       )}
 
-      <div className="flex-1 px-4 pt-4 pb-32 flex flex-col gap-4">
+      <div className="flex-1 px-4 pt-4 pb-24 flex flex-col gap-4">
         <motion.div
           initial={{ opacity: 0, y: 20, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -249,12 +290,14 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
                 <Clock size={11} />
                 截止时间
               </label>
-              <input
-                type="datetime-local"
-                value={deadline}
-                onChange={(e) => setDeadline(e.target.value)}
-                className="w-full bg-zinc-50 border border-zinc-200 text-[#0c0c0c] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-400 focus:bg-white transition-all"
-              />
+              <button
+                type="button"
+                onClick={() => setShowTimePicker(true)}
+                className="w-full bg-zinc-50 border border-zinc-200 text-[#0c0c0c] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-400 focus:bg-white transition-all flex items-center justify-between"
+              >
+                <span>{formatDeadlineDisplay(deadline)}</span>
+                <span className="text-cyan-500 text-xs font-medium">点击选择</span>
+              </button>
             </motion.div>
           </div>
         </motion.div>
@@ -303,10 +346,17 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
                 >
                   <div className="flex-1 min-w-0">
                     <div className="text-[#0c0c0c] font-semibold text-sm truncate">{p.name}</div>
-                    <div className="text-zinc-400 text-xs mt-0.5">
-                      ¥{p.original_price} × {p.total_quantity}个
-                      {p.is_split_allowed && ' · 可拆卖'}
-                      {p.is_frozen && ' · 生鲜'}
+                    <div className="text-zinc-400 text-xs mt-0.5 flex items-center gap-1 flex-wrap">
+                      <span>¥{p.original_price} × {p.total_quantity}个</span>
+                      {p.is_split_allowed && (
+                        <span className="text-cyan-500 text-[10px] bg-cyan-50 px-1.5 py-0.5 rounded-full">可拆卖</span>
+                      )}
+                      {p.is_frozen && (
+                        <span className="flex items-center gap-0.5 text-sky-600 text-[10px] bg-sky-50 px-1.5 py-0.5 rounded-full border border-sky-200 font-medium">
+                          <Snowflake size={9} className="text-sky-500" />
+                          生鲜
+                        </span>
+                      )}
                     </div>
                   </div>
                   <span className="text-orange-500 font-black text-sm">
@@ -368,51 +418,57 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
             </motion.div>
           )}
         </motion.div>
-      </div>
 
-      <motion.div
-        initial={{ y: 100, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ ...springConfig, delay: 0.3 }}
-        className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-zinc-100 px-5 py-3 pb-[calc(env(safe-area-inset-bottom)+12px)]"
-      >
-        <motion.button
-          onClick={handleSubmit}
-          disabled={loading}
-          whileHover={{ scale: loading ? 1 : 1.02 }}
-          whileTap={{ scale: loading ? 1 : 0.96 }}
-          transition={springSnappy}
-          className="w-full bg-gradient-to-r from-cyan-500 to-sky-600 disabled:opacity-50 text-white font-black py-4 rounded-2xl text-base flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/30"
+        {/* 提交按钮 - 放在内容底部而非fixed */}
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ ...springConfig, delay: 0.3 }}
+          className="mt-4"
         >
-          {loading ? (
-            <>
-              <Loader2 size={18} className="animate-spin" />
-              <span>创建中...</span>
-            </>
-          ) : (
-            <>
-              <span>提交创建</span>
-              <ChevronRight size={18} />
-            </>
-          )}
-        </motion.button>
-      </motion.div>
+          <motion.button
+            onClick={handleSubmit}
+            disabled={loading}
+            whileHover={{ scale: loading ? 1 : 1.02 }}
+            whileTap={{ scale: loading ? 1 : 0.96 }}
+            transition={springSnappy}
+            className="w-full bg-gradient-to-r from-cyan-500 to-sky-600 disabled:opacity-50 text-white font-black py-4 rounded-2xl text-base flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/30"
+          >
+            {loading ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                <span>创建中...</span>
+              </>
+            ) : (
+              <>
+                <span>提交创建</span>
+                <ChevronRight size={18} />
+              </>
+            )}
+          </motion.button>
+        </motion.div>
+      </div>
 
       <AnimatePresence>
         {showPicker && (
-          <motion.div
-            variants={overlayVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end"
-          >
+          <>
+            {/* Backdrop */}
+            <motion.div
+              variants={overlayVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm pointer-events-auto"
+              onClick={() => setShowPicker(false)}
+            />
+            {/* Modal Content */}
             <motion.div
               variants={modalVariants}
               initial="hidden"
               animate="visible"
               exit="exit"
-              className="bg-white w-full rounded-t-3xl p-5"
+              className="fixed bottom-0 left-0 right-0 z-[70] bg-white rounded-t-3xl p-5"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 100px)' }}
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-[#0c0c0c] font-black text-lg">选择商品</h3>
@@ -444,9 +500,14 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
                     >
                       <div>
                         <span className="text-[#0c0c0c] font-medium text-sm block">{p.name}</span>
-                        <span className="text-zinc-400 text-xs">
-                          ¥{p.original_price} × {p.total_quantity}个
-                          {p.is_frozen && ' · 生鲜'}
+                        <span className="text-zinc-400 text-xs flex items-center gap-1 flex-wrap">
+                          <span>¥{p.original_price} × {p.total_quantity}个</span>
+                          {p.is_frozen && (
+                            <span className="flex items-center gap-0.5 text-sky-600">
+                              <Snowflake size={9} className="text-sky-500" />
+                              生鲜
+                            </span>
+                          )}
                         </span>
                       </div>
                       <span className={`font-black text-sm ${added ? 'text-zinc-400' : 'text-orange-500'}`}>
@@ -457,9 +518,76 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
                 })}
               </div>
             </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* 重复拼单确认弹窗 */}
+      <AnimatePresence>
+        {duplicateWarning && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center px-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={springBouncy}
+              className="bg-white rounded-2xl p-5 w-full max-w-sm"
+            >
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle size={18} className="text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="font-black text-[#0c0c0c] mb-1">发现同类拼单</h3>
+                  <p className="text-zinc-500 text-xs leading-relaxed">{duplicateWarning.message}</p>
+                </div>
+              </div>
+              {duplicateWarning.groups.length > 1 && (
+                <div className="mb-4 space-y-2">
+                  {duplicateWarning.groups.slice(0, 3).map(g => (
+                    <div key={g.id} className="bg-zinc-50 rounded-lg px-3 py-2 text-xs">
+                      <div className="text-[#0c0c0c] font-medium truncate">{g.title}</div>
+                      {g.deadline && (
+                        <div className="text-zinc-400 mt-0.5">截止 {new Date(g.deadline).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                      )}
+                    </div>
+                  ))}
+                  {duplicateWarning.groups.length > 3 && (
+                    <div className="text-zinc-400 text-xs text-center">还有 {duplicateWarning.groups.length - 3} 个...</div>
+                  )}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setDuplicateWarning(null); setPendingSubmit(false); }}
+                  className="flex-1 py-2.5 rounded-xl bg-zinc-100 text-zinc-600 font-bold text-sm"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => { setDuplicateWarning(null); doSubmit(); }}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-sky-600 text-white font-bold text-sm"
+                >
+                  继续发起
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* iOS风格时间选择器 */}
+      <WheelPicker
+        visible={showTimePicker}
+        onClose={() => setShowTimePicker(false)}
+        onConfirm={(date) => setDeadline(date)}
+        initialDate={deadline}
+      />
     </div>
   );
 }

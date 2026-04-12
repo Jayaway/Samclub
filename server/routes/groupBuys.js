@@ -1,17 +1,37 @@
 import { Router } from 'express';
 import db from '../db.js';
-import { calculateTotalCost, calculateCostShare, hasFrozenItem } from '../utils/calculator.js';
+import { calculateTotalCost, calculateCostShare, hasFrozenItem, leaderDiscountApplies } from '../utils/calculator.js';
 
 const router = Router();
 
-// 获取拼单列表
+// 获取拼单列表（支持相似商品重复检查）
 router.get('/', (req, res) => {
   try {
-    const { status, sort } = req.query;
+    const { status, check_keyword, check_deadline } = req.query;
+
+    // 相似拼单重复检查：返回 ±1小时内存在的同类商品拼单
+    if (check_keyword && check_deadline) {
+      const deadlineMs = new Date(check_deadline).getTime();
+      const oneHour = 60 * 60 * 1000;
+      const minDeadline = new Date(deadlineMs - oneHour).toISOString();
+      const maxDeadline = new Date(deadlineMs + oneHour).toISOString();
+
+      const similars = db.prepare(`
+        SELECT gb.id, gb.title, gb.deadline
+        FROM group_buys gb
+        JOIN products p ON p.group_buy_id = gb.id
+        WHERE gb.status = '拼单中'
+          AND gb.deadline BETWEEN ? AND ?
+          AND (p.name LIKE ? OR gb.title LIKE ?)
+        GROUP BY gb.id
+      `).all(minDeadline, maxDeadline, `%${check_keyword}%`, `%${check_keyword}%`);
+
+      return res.json({ similar: similars });
+    }
 
     let sql = `
       SELECT gb.*, u.nickname as leader_name, u.avatar as leader_avatar,
-        (SELECT COUNT(*) FROM order_items WHERE group_buy_id = gb.id) as member_count
+        (SELECT COUNT(DISTINCT user_id) FROM order_items WHERE group_buy_id = gb.id) as member_count
       FROM group_buys gb
       JOIN users u ON gb.creator_id = u.id
     `;
@@ -128,7 +148,7 @@ router.post('/', (req, res) => {
 
     const stmt = db.prepare(`
       INSERT INTO group_buys (creator_id, title, deadline, pickup_location, status)
-      VALUES (?, ?, ?, ?, '进行中')
+      VALUES (?, ?, ?, ?, '拼单中')
     `);
 
     const result = stmt.run(creator_id, title, deadline, pickup_location || '');
@@ -153,6 +173,32 @@ router.post('/', (req, res) => {
           p.unit_price
         );
       });
+
+      // 管理员运费预警检查
+      // 触发条件：商品名称包含（酒、水、饮料、牛奶）且总金额 > 200元
+      const totalAmount = products.reduce((sum, p) => sum + (p.original_price * p.total_quantity), 0);
+      if (totalAmount > 200) {
+        const freightWarningKeywords = ['酒', '水', '饮料', '牛奶'];
+        const hasWarningProduct = products.some(p =>
+          freightWarningKeywords.some(kw => p.name.includes(kw))
+        );
+        if (hasWarningProduct) {
+          const warning = {
+            type: 'FREIGHT_WARNING',
+            group_buy_id: groupBuyId,
+            title: title,
+            total_amount: totalAmount,
+            products: products.filter(p => freightWarningKeywords.some(kw => p.name.includes(kw))),
+            timestamp: new Date().toISOString(),
+            message: `【管理员预警】拼单"${title}"（ID:${groupBuyId}）商品总金额¥${totalAmount}超过200元，且含有酒水/饮料类商品，请关注运费计算`
+          };
+          // 输出到控制台（生产环境可替换为邮件/钉钉通知）
+          console.warn('🚨 管理员运费预警:', JSON.stringify(warning, null, 2));
+
+          // 这里可以添加实际的通知逻辑，如：
+          // await sendAdminNotification(warning);
+        }
+      }
     }
 
     const groupBuy = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(groupBuyId);
@@ -225,13 +271,18 @@ router.get('/:id/cost-details', (req, res) => {
     const totalAmount = orderItems.reduce((sum, item) => sum + item.product_amount, 0);
     const costInfo = calculateTotalCost(totalAmount, frozen);
 
-    // 计算分摊（所有成员平等分摊，无团长优惠）
+    // 计算团长优惠是否生效
+    const leaderOrder = orderItems.find(i => i.user_id === gb.creator_id);
+    const leaderAmount = leaderOrder ? leaderOrder.product_amount : 0;
+    const discountApplies = leaderDiscountApplies(orderItems.length, leaderAmount, products);
+
+    // 计算分摊（含团长优惠）
     const userOrders = orderItems.map(item => ({
       userId: item.user_id,
       productAmount: item.product_amount
     }));
 
-    const costDetails = calculateCostShare(totalAmount, userOrders, frozen);
+    const costDetails = calculateCostShare(totalAmount, userOrders, frozen, gb.creator_id, discountApplies);
 
     // 保存到数据库
     const insertCostDetail = db.prepare(`

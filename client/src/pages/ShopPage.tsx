@@ -19,7 +19,11 @@ const categoryColors: Record<string, string> = {
 
 interface LocalProduct extends Product {
   myQuantity: number;
+  mySplitQuantity: number; // 拆分单位购买数量
   myOrderId?: number;
+  splitUnit?: string;
+  splitQuantity?: number; // 整份包含的拆分单位数
+  splitPricePerUnit?: number;
 }
 
 export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPageProps) {
@@ -57,7 +61,12 @@ export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPag
           isFresh: Boolean(p.is_frozen || p.isFresh),
           quantity: 0,
           myQuantity: orderMap[p.id]?.quantity || 0,
+          mySplitQuantity: 0,
           myOrderId: orderMap[p.id]?.id,
+          is_split_allowed: p.is_split_allowed,
+          splitUnit: p.split_unit || '个',
+          splitQuantity: p.split_quantity || 1,
+          splitPricePerUnit: p.split_price_per_unit || (p.unit_price ? parseFloat((p.unit_price / (p.split_quantity || 1)).toFixed(2)) : p.unitPrice),
         }));
 
         setProducts(mappedProducts);
@@ -83,49 +92,63 @@ export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPag
     return '其他';
   }
 
-  const totalSelected = products.reduce((s, p) => s + p.myQuantity * p.unitPrice, 0);
-  const selectedCount = products.reduce((s, p) => s + p.myQuantity, 0);
+  const totalSelected = products.reduce((s, p) => s + p.myQuantity * p.unitPrice + p.mySplitQuantity * (p.splitPricePerUnit || 0), 0);
+  const selectedCount = products.reduce((s, p) => s + p.myQuantity + p.mySplitQuantity, 0);
   const newTotal = currentAmount + totalSelected;
   const pct = Math.min(100, Math.round((newTotal / target) * 100));
   const remaining = Math.max(0, target - newTotal);
 
-  const updateQty = async (product: LocalProduct, delta: number) => {
-    const current = product.myQuantity;
-    const next = Math.max(0, Math.min(product.remaining, current + delta));
+  const updateQty = async (product: LocalProduct, delta: number, isSplit: boolean = false) => {
+    if (isSplit) {
+      // 拆分单位购买
+      const current = product.mySplitQuantity;
+      const maxSplit = product.is_split_allowed ? (product.remaining * (product.splitQuantity || 1)) : 0;
+      const next = Math.max(0, Math.min(maxSplit, current + delta));
+      if (next === current) return;
+      setProducts((prev) =>
+        prev.map((p) => {
+          if (p.id !== product.id) return p;
+          return { ...p, mySplitQuantity: next };
+        })
+      );
+    } else {
+      // 整份购买
+      const current = product.myQuantity;
+      const next = Math.max(0, Math.min(product.remaining, current + delta));
+      if (next === current) return;
 
-    if (next === current) return;
-
-    try {
-      if (product.myOrderId) {
-        if (next === 0) {
-          await removeOrderItem(product.myOrderId);
-          product.myOrderId = undefined;
-        } else {
-          await addOrderItem({
+      try {
+        if (product.myOrderId) {
+          if (next === 0) {
+            await removeOrderItem(product.myOrderId);
+            product.myOrderId = undefined;
+          } else {
+            await addOrderItem({
+              group_buy_id: groupId,
+              user_id: userId,
+              product_id: product.id,
+              quantity: next,
+            });
+          }
+        } else if (next > 0) {
+          const result = await addOrderItem({
             group_buy_id: groupId,
             user_id: userId,
             product_id: product.id,
             quantity: next,
           });
+          product.myOrderId = result.id;
         }
-      } else if (next > 0) {
-        const result = await addOrderItem({
-          group_buy_id: groupId,
-          user_id: userId,
-          product_id: product.id,
-          quantity: next,
-        });
-        product.myOrderId = result.id;
-      }
 
-      setProducts((prev) =>
-        prev.map((p) => {
-          if (p.id !== product.id) return p;
-          return { ...p, myQuantity: next };
-        })
-      );
-    } catch (err) {
-      console.error('Failed to update quantity:', err);
+        setProducts((prev) =>
+          prev.map((p) => {
+            if (p.id !== product.id) return p;
+            return { ...p, myQuantity: next };
+          })
+        );
+      } catch (err) {
+        console.error('Failed to update quantity:', err);
+      }
     }
   };
 
@@ -242,13 +265,13 @@ export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPag
 
             {/* Qty controls */}
             <div className="flex items-center justify-between mt-3">
-              {p.myQuantity > 0 && (
+              {(p.myQuantity > 0 || p.mySplitQuantity > 0) && (
                 <div className="flex items-center gap-1 text-zinc-500 text-xs">
                   <Tag size={11} />
-                  小计 <span className="font-bold text-zinc-700">¥{(p.myQuantity * p.unitPrice).toFixed(1)}</span>
+                  小计 <span className="font-bold text-zinc-700">¥{(p.myQuantity * p.unitPrice + p.mySplitQuantity * (p.splitPricePerUnit || 0)).toFixed(1)}</span>
                 </div>
               )}
-              <div className={`flex items-center gap-2 ${p.myQuantity === 0 ? 'ml-auto' : ''}`}>
+              <div className={`flex items-center gap-2 ${p.myQuantity === 0 && p.mySplitQuantity === 0 ? 'ml-auto' : ''}`}>
                 <button
                   onClick={() => updateQty(p, -1)}
                   disabled={p.myQuantity === 0}
@@ -266,8 +289,37 @@ export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPag
                 >
                   <Plus size={14} />
                 </button>
+                {/* 拆分购买控件 */}
+                {p.is_split_allowed && (
+                  <div className="flex items-center gap-1 ml-2 pl-2 border-l border-zinc-200">
+                    <span className="text-[10px] text-zinc-400">{p.splitUnit || '个'}</span>
+                    <button
+                      onClick={() => updateQty(p, -1, true)}
+                      disabled={p.mySplitQuantity === 0}
+                      className="w-7 h-7 rounded-full bg-orange-50 border border-orange-200 flex items-center justify-center text-orange-500 disabled:opacity-30 active:scale-90 transition-transform"
+                    >
+                      <Minus size={12} />
+                    </button>
+                    <span className="text-orange-500 font-black text-sm w-5 text-center">
+                      {p.mySplitQuantity}
+                    </span>
+                    <button
+                      onClick={() => updateQty(p, 1, true)}
+                      disabled={p.mySplitQuantity >= p.remaining * (p.splitQuantity || 1)}
+                      className="w-7 h-7 rounded-full bg-orange-500 flex items-center justify-center text-white disabled:opacity-30 active:scale-90 transition-transform shadow-md shadow-orange-500/20"
+                    >
+                      <Plus size={12} />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
+            {/* 拆分购买说明 */}
+            {p.is_split_allowed && (
+              <div className="text-[10px] text-orange-500 mt-2 bg-orange-50 px-2 py-1 rounded-lg inline-flex items-center gap-1">
+                可拆买 · 每{p.splitUnit || '个'} ¥{(p.splitPricePerUnit || 0).toFixed(1)}
+              </div>
+            )}
           </div>
         ))}
       </div>
