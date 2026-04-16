@@ -1,11 +1,16 @@
 import { Router } from 'express';
 import db from '../db.js';
+import { requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
 
-// 平台收益统计
-router.get('/platform', (req, res) => {
+// 平台收益统计（仅管理员可访问）
+router.get('/platform', requireAdmin, (req, res) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit) || 20);
+    const offset = (page - 1) * limit;
+
     // 全部尾差收益
     const total = db.prepare(`
       SELECT COALESCE(SUM(diff_cents), 0) as total_cents
@@ -24,8 +29,8 @@ router.get('/platform', (req, res) => {
       LIMIT 12
     `).all();
 
-    // 按拼单详情（最近20条）
-    const byGroup = db.prepare(`
+    // 按拼单详情（分页）
+    const allByGroup = db.prepare(`
       SELECT
         pr.group_buy_id,
         pr.diff_cents,
@@ -36,8 +41,10 @@ router.get('/platform', (req, res) => {
       FROM platform_revenue pr
       JOIN group_buys gb ON gb.id = pr.group_buy_id
       ORDER BY pr.recorded_at DESC
-      LIMIT 20
     `).all();
+
+    const totalCount = allByGroup.length;
+    const byGroup = allByGroup.slice(offset, offset + limit);
 
     res.json({
       total_cents: total.total_cents,
@@ -49,10 +56,17 @@ router.get('/platform', (req, res) => {
       recent: byGroup.map(row => ({
         ...row,
         diff_yuan: (row.diff_cents / 100).toFixed(2)
-      }))
+      })),
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        total_pages: Math.ceil(totalCount / limit)
+      }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Get platform stats error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 

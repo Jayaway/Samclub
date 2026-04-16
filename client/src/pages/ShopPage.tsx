@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Minus, Plus, ShoppingBag, Snowflake, Tag, Loader2 } from 'lucide-react';
 import { Product } from '../types';
-import { fetchGroupBuyById, fetchMyOrders, addOrderItem, removeOrderItem } from '../utils/api';
+import { fetchGroupBuyById, fetchMyOrders, addOrderItem, removeOrderItem, ApiGroupBuy } from '../utils/api';
 
 interface ShopPageProps {
   groupId: number;
@@ -32,10 +32,12 @@ export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPag
   const [products, setProducts] = useState<LocalProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [groupData, setGroupData] = useState<any>(null);
+  const [groupData, setGroupData] = useState<ApiGroupBuy | null>(null);
+  const [loadError, setLoadError] = useState('');
 
+  const FREE_SHIPPING_TARGET = 99;
   const currentAmount = groupData?.total_amount || 0;
-  const target = 99;
+  const target = FREE_SHIPPING_TARGET;
 
   useEffect(() => {
     async function loadData() {
@@ -77,6 +79,7 @@ export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPag
         setProducts(mappedProducts);
       } catch (err) {
         console.error('Failed to load shop data:', err);
+        setLoadError(err instanceof Error ? err.message : '加载失败，请重试');
       } finally {
         setLoading(false);
       }
@@ -181,6 +184,17 @@ export default function ShopPage({ groupId, userId, onBack, onConfirm }: ShopPag
     return (
       <div className="min-h-screen bg-[#f4f6fa] flex items-center justify-center">
         <Loader2 size={32} className="animate-spin text-cyan-500" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-[#f4f6fa] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-zinc-500 text-sm mb-3">{loadError}</p>
+          <button onClick={() => window.location.reload()} className="text-cyan-500 text-sm font-bold">重新加载</button>
+        </div>
       </div>
     );
   }

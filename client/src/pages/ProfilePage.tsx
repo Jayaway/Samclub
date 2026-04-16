@@ -340,11 +340,17 @@ export default function ProfilePage({ user, onLogout, onNavigate }: ProfilePageP
                   </h4>
                   <p className="text-xs text-zinc-500 mb-3">遇到问题或有任何建议？欢迎联系我们</p>
                   <div className="flex gap-3">
-                    <button className="flex-1 bg-cyan-500 text-white text-sm font-bold py-2.5 rounded-xl flex items-center justify-center gap-2">
+                    <button
+                      onClick={() => window.open('https://work.weixin.qq.com/kfid/kfid1', '_blank')}
+                      className="flex-1 bg-cyan-500 text-white text-sm font-bold py-2.5 rounded-xl flex items-center justify-center gap-2"
+                    >
                       <MessageCircle size={16} />
                       在线客服
                     </button>
-                    <button className="flex-1 bg-zinc-100 text-zinc-600 text-sm font-bold py-2.5 rounded-xl flex items-center justify-center gap-2">
+                    <button
+                      onClick={() => window.location.href = 'mailto:support@campus-sam.com?subject=校园山姆拼单反馈'}
+                      className="flex-1 bg-zinc-100 text-zinc-600 text-sm font-bold py-2.5 rounded-xl flex items-center justify-center gap-2"
+                    >
                       <Mail size={16} />
                       发邮件
                     </button>

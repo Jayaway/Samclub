@@ -5,6 +5,10 @@ import { dirname, join } from 'path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const db = new Database(join(__dirname, 'campus.sqlite'));
 
+// 启用 WAL 模式和外键约束
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+
 // 初始化表
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -107,6 +111,22 @@ db.exec(`
     recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (group_buy_id) REFERENCES group_buys(id)
   );
+
+  CREATE TABLE IF NOT EXISTS alipay_trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    out_trade_no TEXT UNIQUE NOT NULL,
+    group_buy_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    subject TEXT NOT NULL,
+    status TEXT DEFAULT 'WAIT_BUYER_PAY',
+    trade_no TEXT DEFAULT '',
+    buyer_logon_id TEXT DEFAULT '',
+    notify_time DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (group_buy_id) REFERENCES group_buys(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
 `);
 
 // 迁移：添加新字段（对已有表安全执行）
@@ -125,10 +145,27 @@ const migrations = [
   "ALTER TABLE products ADD COLUMN product_type TEXT DEFAULT 'fixed'",
   "ALTER TABLE group_buys ADD COLUMN payment_remark TEXT DEFAULT ''",
   "ALTER TABLE users ADD COLUMN payment_qr TEXT DEFAULT ''",
+  "CREATE TABLE IF NOT EXISTS alipay_trades (id INTEGER PRIMARY KEY AUTOINCREMENT, out_trade_no TEXT UNIQUE NOT NULL, group_buy_id INTEGER NOT NULL, user_id INTEGER NOT NULL, amount REAL NOT NULL, subject TEXT NOT NULL, status TEXT DEFAULT 'WAIT_BUYER_PAY', trade_no TEXT DEFAULT '', buyer_logon_id TEXT DEFAULT '', notify_time DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (group_buy_id) REFERENCES group_buys(id), FOREIGN KEY (user_id) REFERENCES users(id))",
 ];
 
 for (const sql of migrations) {
-  try { db.exec(sql); } catch (_) { /* column already exists */ }
+  try {
+    db.exec(sql);
+  } catch (error) {
+    // 仅忽略 "duplicate column name" 错误，其他错误打印日志
+    if (!error.message.includes('duplicate column name')) {
+      console.error('Migration error:', error.message);
+    }
+  }
 }
+
+// 创建索引以提升查询性能
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_order_items_group_user ON order_items(group_buy_id, user_id);
+  CREATE INDEX IF NOT EXISTS idx_payments_group_user ON payments(group_buy_id, user_id);
+  CREATE INDEX IF NOT EXISTS idx_messages_group ON messages(group_buy_id);
+  CREATE INDEX IF NOT EXISTS idx_products_group ON products(group_buy_id);
+  CREATE INDEX IF NOT EXISTS idx_cost_details_group ON cost_details(group_buy_id);
+`);
 
 export default db;

@@ -1,4 +1,4 @@
-export type Page = 'login' | 'square' | 'shop' | 'create' | 'detail' | 'profile' | 'my';
+export type Page = 'login' | 'square' | 'shop' | 'create' | 'detail' | 'profile' | 'my' | 'payment-callback';
 
 export type GroupStatus = 'active' | 'completed' | 'expired';
 
@@ -11,6 +11,7 @@ export interface Participant {
   isLeader?: boolean;
 }
 
+// 前端UI用的 GroupBuy（用于 SquarePage、DetailPage 等）
 export interface GroupBuy {
   id: number;
   title: string;
@@ -32,18 +33,18 @@ export interface GroupBuy {
 export interface Product {
   id: number;
   name: string;
-  unitPrice: number; // 整份单价（元）
+  unitPrice: number;
   category?: string;
-  remaining: number; // 剩余可购数量
-  quantity: number; // 整份数量
+  remaining: number;
+  quantity: number;
   isFresh: boolean;
   needs_cold_chain?: boolean;
-  allow_split?: boolean; // 是否允许拆分
-  unit_price?: number; // 整份单价（元）
-  split_unit?: string; // 拆分单位（片/个）
-  split_quantity_per_whole?: number; // 每整份含拆分单位数
-  split_price_per_unit?: number; // 拆分单价（分）
-  self_retain_quantity?: number; // 发起人自留数量
+  allow_split?: boolean;
+  unit_price?: number;
+  split_unit?: string;
+  split_quantity_per_whole?: number;
+  split_price_per_unit?: number;
+  self_retain_quantity?: number;
 }
 
 export interface CartItem {

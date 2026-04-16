@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Flame, Clock, CheckCircle, XCircle, Plus, MapPin, Users, Loader2 } from 'lucide-react';
+import { Flame, Clock, CheckCircle, XCircle, MapPin, Users, Loader2 } from 'lucide-react';
 import { GroupBuy, Page } from '../types';
-import { springConfig, springBouncy, springSnappy, staggerContainer, staggerItem } from '../utils/animations';
+import { springConfig, springBouncy, staggerContainer, staggerItem } from '../utils/animations';
+import cakeImg from '../assets/cake.png';
 
 interface SquarePageProps {
   groups: GroupBuy[];
@@ -38,7 +39,7 @@ const statusConfig = {
   },
 };
 
-function formatDeadline(deadline: string): string {
+function formatDeadline(deadline: string, _tick?: number): string {
   if (!deadline) return '';
   try {
     const now = new Date();
@@ -215,6 +216,11 @@ function GroupCard({ group, onClick, index }: { group: GroupBuy; onClick: () => 
 
 export default function SquarePage({ groups, loading, onNavigate, onRefresh }: SquarePageProps) {
   const [selectedTab, setSelectedTab] = useState<'all' | 'active' | 'completed'>('all');
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick(t => t + 1), 60000);
+    return () => clearInterval(timer);
+  }, []);
   const activeCount = groups.filter((g) => g.status === 'active').length;
   const completedCount = groups.filter((g) => g.status === 'completed').length;
 
@@ -299,7 +305,7 @@ export default function SquarePage({ groups, loading, onNavigate, onRefresh }: S
               key={tab.key}
               onClick={() => setSelectedTab(tab.key as 'all' | 'active' | 'completed')}
               whileTap={{ scale: 0.95 }}
-              transition={springSnappy}
+              transition={springBouncy}
               className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
                 selectedTab === tab.key
                   ? 'bg-cyan-500 text-white'
@@ -351,7 +357,7 @@ export default function SquarePage({ groups, loading, onNavigate, onRefresh }: S
             className="flex flex-col items-center justify-center py-12 text-zinc-400"
           >
             <p className="text-sm mb-4">
-              {selectedTab === 'all' ? '暂无拼单，快来发起第一个吧！' : '暂无{selectedTab === "active" ? "进行中" : "已完成"}的拼单'}
+              {selectedTab === 'all' ? '暂无拼单，快来发起第一个吧！' : `暂无${selectedTab === 'active' ? '进行中' : '已完成'}的拼单`}
             </p>
           </motion.div>
         )}
@@ -373,9 +379,9 @@ export default function SquarePage({ groups, loading, onNavigate, onRefresh }: S
         transition={{ ...springBouncy, delay: 0.5 }}
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
-        className="fixed bottom-24 right-5 w-14 h-14 bg-gradient-to-br from-cyan-500 to-sky-600 rounded-full flex items-center justify-center shadow-xl shadow-cyan-500/40 z-30"
+        className="fixed bottom-24 right-5 w-14 h-14 z-30"
       >
-        <Plus size={24} className="text-white" />
+        <img src={cakeImg} alt="发起拼单" className="w-full h-full object-contain" />
       </motion.button>
     </div>
   );

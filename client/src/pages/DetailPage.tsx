@@ -3,15 +3,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, MapPin, Clock, Share2, UserPlus, CheckCircle, Zap, Loader2, Info, X, AlertCircle, Copy, Check, CreditCard, Truck, Package, CheckCheck, Snowflake, XCircle, Plus, MessageSquare, Send } from 'lucide-react';
 import { GroupBuy, Participant } from '../types';
 import { springConfig, springBouncy, springSnappy } from '../utils/animations';
-import { fetchGroupBuyById, fetchCostDetails, exitGroupBuy, addProductsToGroupBuy, updateGroupBuyStatus, fetchMessages, sendMessage, fetchPaymentInfo, fetchPaymentProgress, confirmPayment, fetchPaymentsByGroup, Message, PaymentProgress, PaymentRecord } from '../utils/api';
+import { fetchGroupBuyById, fetchCostDetails, exitGroupBuy, addProductsToGroupBuy, updateGroupBuyStatus, fetchMessages, sendMessage, fetchPaymentInfo, fetchPaymentProgress, confirmPayment, fetchPaymentsByGroup, alipayPay, Message, PaymentProgress, PaymentRecord, ApiGroupBuy, ApiCostDetail, CostDetailsResponse } from '../utils/api';
 
 type GroupStatus = 'active' | 'pending_payment' | 'ordered' | 'delivered' | 'completed' | 'cancelled';
 
 interface DetailPageProps {
   group: GroupBuy;
-  userId: number;
+  userId?: number; // 改为可选，未登录时为 undefined
   onBack: () => void;
   onJoin: () => void;
+  onRequireLogin?: (action?: () => void) => void; // 要求登录的回调
 }
 
 function formatDeadline(deadline: string): string {
@@ -30,9 +31,9 @@ function formatDeadline(deadline: string): string {
   }
 }
 
-export default function DetailPage({ group, userId, onBack, onJoin }: DetailPageProps) {
-  const [detailData, setDetailData] = useState<any>(null);
-  const [costDetails, setCostDetails] = useState<any>(null);
+export default function DetailPage({ group, userId, onBack, onJoin, onRequireLogin }: DetailPageProps) {
+  const [detailData, setDetailData] = useState<ApiGroupBuy | null>(null);
+  const [costDetails, setCostDetails] = useState<CostDetailsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [showFreightInfo, setShowFreightInfo] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>(group.participants);
@@ -57,7 +58,7 @@ export default function DetailPage({ group, userId, onBack, onJoin }: DetailPage
   const [confirmingPayment, setConfirmingPayment] = useState<number | null>(null);
 
   // Check if current user is the creator/leader
-  const isLeader = group.creator_id === userId;
+  const isLeader = userId && group.creator_id === userId;
 
   // Determine status from detailData or group
   useEffect(() => {
@@ -106,9 +107,13 @@ export default function DetailPage({ group, userId, onBack, onJoin }: DetailPage
 
   async function handleSendMessage() {
     if (!messageInput.trim()) return;
+    if (!userId && onRequireLogin) {
+      onRequireLogin();
+      return;
+    }
     setSendingMessage(true);
     try {
-      const newMsg = await sendMessage(group.id, userId, messageInput.trim());
+      const newMsg = await sendMessage(group.id, messageInput.trim());
       setMessages(prev => [...prev, newMsg]);
       setMessageInput('');
     } catch (err) {
@@ -148,7 +153,7 @@ export default function DetailPage({ group, userId, onBack, onJoin }: DetailPage
   const remaining = Math.max(0, displayGroup.targetAmount - displayGroup.currentAmount);
   const displayDeadline = formatDeadline(group.deadline);
 
-  const myCostDetail = costDetails?.costDetails?.find((d: any) => d.user_id === userId);
+  const myCostDetail = costDetails?.costDetails?.find((d: ApiCostDetail) => d.user_id === userId);
   const myAmount = myCostDetail?.base_amount || displayGroup.participants[0]?.amount || 0;
   const splitFee = myCostDetail?.share_fee || 0;
   const totalFee = myCostDetail?.final_amount || myAmount + splitFee;
@@ -712,7 +717,22 @@ export default function DetailPage({ group, userId, onBack, onJoin }: DetailPage
             </>
           ) : groupStatus === 'pending_payment' ? (
             <motion.button
-              onClick={() => setShowQRModal(true)}
+              onClick={async () => {
+                try {
+                  const result = await alipayPay({
+                    group_buy_id: group.id,
+                    user_id: userId,
+                    amount: totalFee,
+                    device: 'auto',
+                  });
+                  // Redirect to Alipay payment page
+                  window.location.href = result.payment_url;
+                } catch (err) {
+                  console.error('支付发起失败:', err);
+                  // Fallback to QR code modal
+                  setShowQRModal(true);
+                }
+              }}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.96 }}
               transition={springSnappy}
@@ -800,7 +820,7 @@ export default function DetailPage({ group, userId, onBack, onJoin }: DetailPage
                   <button
                     onClick={() => {
                       setShowShareModal(false);
-                      alert('海报生成功能开发中');
+                      console.log('海报生成功能开发中');
                     }}
                     className="px-4 py-2 rounded-xl text-sm font-bold bg-cyan-500 text-white"
                   >
@@ -1005,7 +1025,7 @@ export default function DetailPage({ group, userId, onBack, onJoin }: DetailPage
                     setShowExitConfirm(false);
                     setActionLoading(true);
                     try {
-                      await exitGroupBuy(group.id, userId);
+                      await exitGroupBuy(group.id);
                       // 刷新数据
                       const updated = await fetchGroupBuyById(group.id);
                       setDetailData(updated);

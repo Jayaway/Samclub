@@ -28,11 +28,14 @@ interface AddedProduct {
 }
 
 const sampleProducts = [
-  { id: '1', name: '山姆有机草莓 500g', original_price: 28.9, quantity: 5, needs_cold_chain: false, allow_split: false, split_unit: '颗', split_quantity_per_whole: 1, split_price_per_unit: 2890, self_retain_quantity: 0, product_type: 'fixed' as const },
-  { id: '2', name: '山姆瑞士卷蛋糕', original_price: 39.9, quantity: 4, needs_cold_chain: false, allow_split: true, split_unit: '片', split_quantity_per_whole: 6, split_price_per_unit: 665, self_retain_quantity: 0, product_type: 'fixed' as const },
-  { id: '3', name: '山姆鲜牛奶 1L', original_price: 14.9, quantity: 6, needs_cold_chain: true, allow_split: false, split_unit: '盒', split_quantity_per_whole: 1, split_price_per_unit: 1490, self_retain_quantity: 0, product_type: 'fixed' as const },
-  { id: '4', name: '山姆坚果混合装 750g', original_price: 59.9, quantity: 5, needs_cold_chain: false, allow_split: true, split_unit: '包', split_quantity_per_whole: 1, split_price_per_unit: 5990, self_retain_quantity: 0, product_type: 'fixed' as const },
-  { id: '5', name: '山姆藤椒味薯片 270g', original_price: 18.9, quantity: 8, needs_cold_chain: false, allow_split: true, split_unit: '袋', split_quantity_per_whole: 1, split_price_per_unit: 1890, self_retain_quantity: 0, product_type: 'fixed' as const },
+  { id: '1', name: '原味伯爵味瑞士卷', original_price: 59.8, quantity: 1, needs_cold_chain: true, allow_split: true, split_unit: '片', split_quantity_per_whole: 16, split_price_per_unit: 374, self_retain_quantity: 0, product_type: 'fixed' as const },
+  { id: '2', name: '黑森林瑞士卷', original_price: 68, quantity: 1, needs_cold_chain: true, allow_split: true, split_unit: '片', split_quantity_per_whole: 12, split_price_per_unit: 567, self_retain_quantity: 0, product_type: 'fixed' as const },
+  { id: '3', name: '麻薯', original_price: 29.8, quantity: 1, needs_cold_chain: false, allow_split: true, split_unit: '个', split_quantity_per_whole: 24, split_price_per_unit: 124, self_retain_quantity: 0, product_type: 'fixed' as const },
+  { id: '4', name: '榴莲大福', original_price: 79.9, quantity: 1, needs_cold_chain: true, allow_split: true, split_unit: '个', split_quantity_per_whole: 16, split_price_per_unit: 499, self_retain_quantity: 0, product_type: 'fixed' as const },
+  { id: '5', name: '提拉米苏', original_price: 59.9, quantity: 1, needs_cold_chain: true, allow_split: true, split_unit: '个', split_quantity_per_whole: 9, split_price_per_unit: 665, self_retain_quantity: 0, product_type: 'fixed' as const },
+  { id: '6', name: '榴芒班戟', original_price: 79.9, quantity: 1, needs_cold_chain: true, allow_split: true, split_unit: '个', split_quantity_per_whole: 12, split_price_per_unit: 666, self_retain_quantity: 0, product_type: 'fixed' as const },
+  { id: '7', name: '抹茶牛乳布丁杯', original_price: 79.9, quantity: 1, needs_cold_chain: true, allow_split: true, split_unit: '个', split_quantity_per_whole: 9, split_price_per_unit: 888, self_retain_quantity: 0, product_type: 'fixed' as const },
+  { id: '8', name: '莓果红丝绒蛋糕', original_price: 79.9, quantity: 1, needs_cold_chain: true, allow_split: true, split_unit: '个', split_quantity_per_whole: 12, split_price_per_unit: 666, self_retain_quantity: 0, product_type: 'fixed' as const },
 ];
 
 export default function CreatePage({ userId, onBack, onCreated }: CreatePageProps) {
@@ -158,8 +161,9 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
       });
 
       onCreated();
-    } catch (err: any) {
-      setError(err.message || '创建失败');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '创建失败';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -193,9 +197,11 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
     // 重复检查：取所有商品名前4字作为关键词，聚合去重
     const allKeywords = [...new Set(addedProducts.map(p => p.name.slice(0, 4)))];
     try {
+      const results = await Promise.all(
+        allKeywords.map(keyword => checkDuplicateGroupBuy(keyword, deadline.toISOString()))
+      );
       const allSimilar: { id: number; title: string; deadline: string; currentAmount?: number; targetAmount?: number }[] = [];
-      for (const keyword of allKeywords) {
-        const { similar } = await checkDuplicateGroupBuy(keyword, deadline.toISOString());
+      for (const { similar } of results) {
         if (similar) {
           for (const s of similar) {
             if (!allSimilar.find(x => x.id === s.id)) {
@@ -215,8 +221,9 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
         setPendingSubmit(true);
         return;
       }
-    } catch (_) {
+    } catch (dupErr) {
       // 检查失败不阻止创建
+      console.warn('Duplicate check failed:', dupErr);
     }
 
     await doSubmit();
@@ -311,10 +318,57 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
           </motion.p>
         </motion.div>
 
+        {/* 图片滚动区域 */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ ...springConfig, delay: 0.15 }}
+          transition={{ ...springConfig, delay: 0.12 }}
+          className="bg-white rounded-2xl overflow-hidden shadow-sm"
+        >
+          <div className="px-4 py-3 border-b border-zinc-50 flex items-center gap-2">
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ ...springBouncy, delay: 0.15 }}
+              className="w-6 h-6 rounded-full bg-cyan-500 flex items-center justify-center text-white text-xs font-black"
+            >
+              1
+            </motion.div>
+            <span className="text-[#0c0c0c] font-bold text-sm">商品图片</span>
+          </div>
+          <div className="p-4">
+            <div
+              className="flex gap-3 overflow-x-auto pb-2"
+              style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+            >
+              {[
+                { bg: 'from-rose-400 to-orange-400', emoji: '🍓', label: '有机草莓' },
+                { bg: 'from-amber-400 to-yellow-400', emoji: '🧁', label: '瑞士卷蛋糕' },
+                { bg: 'from-sky-400 to-blue-400', emoji: '🥛', label: '鲜牛奶' },
+                { bg: 'from-emerald-400 to-teal-400', emoji: '🥜', label: '坚果混合装' },
+                { bg: 'from-violet-400 to-purple-400', emoji: '🍟', label: '藤椒薯片' },
+              ].map((item, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ ...springBouncy, delay: 0.18 + i * 0.06 }}
+                  style={{ scrollSnapAlign: 'start', flexShrink: 0 }}
+                  className={`w-28 h-36 rounded-2xl bg-gradient-to-br ${item.bg} flex flex-col items-center justify-center gap-2 shadow-md`}
+                >
+                  <span className="text-4xl select-none">{item.emoji}</span>
+                  <span className="text-white/90 text-xs font-bold text-center px-1">{item.label}</span>
+                </motion.div>
+              ))}
+            </div>
+            <p className="text-zinc-400 text-[10px] mt-2 text-center">← 左右滑动查看更多商品 →</p>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ ...springConfig, delay: 0.18 }}
           className="bg-white rounded-2xl overflow-hidden shadow-sm"
         >
           <div className="px-4 py-3 border-b border-zinc-50 flex items-center gap-2">
@@ -324,7 +378,7 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
               transition={{ ...springBouncy, delay: 0.2 }}
               className="w-6 h-6 rounded-full bg-cyan-500 flex items-center justify-center text-white text-xs font-black"
             >
-              1
+              2
             </motion.div>
             <span className="text-[#0c0c0c] font-bold text-sm">取货信息</span>
           </div>
@@ -371,7 +425,7 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ ...springConfig, delay: 0.2 }}
+          transition={{ ...springConfig, delay: 0.22 }}
           className="bg-white rounded-2xl overflow-hidden shadow-sm"
         >
           <div className="px-4 py-3 border-b border-zinc-50 flex items-center gap-2">
@@ -381,7 +435,7 @@ export default function CreatePage({ userId, onBack, onCreated }: CreatePageProp
               transition={{ ...springBouncy, delay: 0.25 }}
               className="w-6 h-6 rounded-full bg-sky-500 flex items-center justify-center text-white text-xs font-black"
             >
-              2
+              3
             </motion.div>
             <span className="text-[#0c0c0c] font-bold text-sm">拼单商品</span>
             <span className="ml-auto text-zinc-400 text-xs">

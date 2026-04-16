@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 
 import usersRouter from './routes/users.js';
 import groupBuysRouter from './routes/groupBuys.js';
@@ -9,10 +11,35 @@ import paymentsRouter from './routes/payments.js';
 import costDetailsRouter from './routes/costDetails.js';
 import messagesRouter from './routes/messages.js';
 import statsRouter from './routes/stats.js';
+import alipayRouter from './routes/alipay.js';
 import db from './db.js';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 100;
+
+// 安全中间件
+app.use(helmet());
+
+// 全局速率限制：每15分钟最多100个请求
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { error: '请求过于频繁，请稍后再试' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/', globalLimiter);
+
+// 登录注册更严格的速率限制：每15分钟最多10次
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: '登录/注册请求过于频繁，请稍后再试' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/users/login', authLimiter);
+app.use('/api/users/register', authLimiter);
 
 // 中间件
 app.use(cors());
@@ -27,6 +54,7 @@ app.use('/api/payments', paymentsRouter);
 app.use('/api/cost-details', costDetailsRouter);
 app.use('/api/messages', messagesRouter);
 app.use('/api/stats', statsRouter);
+app.use('/api/alipay', alipayRouter);
 
 // 健康检查
 app.get('/api/health', (req, res) => {

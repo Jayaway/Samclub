@@ -1,12 +1,17 @@
 import { Router } from 'express';
 import db from '../db.js';
+import { auth } from '../middleware/auth.js';
+import { sanitizeString } from '../middleware/validate.js';
 
 const router = Router();
 
-// 获取拼单留言板消息
+// 获取拼单留言板消息（支持分页）
 router.get('/:groupId', (req, res) => {
   try {
     const { groupId } = req.params;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+    const offset = (page - 1) * limit;
 
     const messages = db.prepare(`
       SELECT m.*, u.nickname as user_name, u.avatar as user_avatar
@@ -14,28 +19,45 @@ router.get('/:groupId', (req, res) => {
       JOIN users u ON m.user_id = u.id
       WHERE m.group_buy_id = ?
       ORDER BY m.created_at ASC
-    `).all(groupId);
+      LIMIT ? OFFSET ?
+    `).all(groupId, limit, offset);
 
-    res.json(messages);
+    // 获取总数
+    const total = db.prepare('SELECT COUNT(*) as count FROM messages WHERE group_buy_id = ?').get(groupId).count;
+
+    res.json({
+      messages,
+      pagination: {
+        page,
+        limit,
+        total,
+        total_pages: Math.ceil(total / limit)
+      }
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Get messages error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
 // 发送留言
-router.post('/', (req, res) => {
+router.post('/', auth, (req, res) => {
   try {
-    const { group_buy_id, user_id, content } = req.body;
+    const { group_buy_id, content } = req.body;
+    const user_id = req.user.userId;
 
-    if (!group_buy_id || !user_id || !content) {
+    if (!group_buy_id || !content) {
       return res.status(400).json({ error: '缺少必填字段' });
     }
 
-    if (content.trim().length === 0) {
+    // 使用 sanitizeString 转义内容，防止XSS
+    const sanitizedContent = sanitizeString(content.trim());
+
+    if (sanitizedContent.length === 0) {
       return res.status(400).json({ error: '留言内容不能为空' });
     }
 
-    if (content.length > 500) {
+    if (sanitizedContent.length > 500) {
       return res.status(400).json({ error: '留言内容不能超过500字' });
     }
 
@@ -63,7 +85,7 @@ router.post('/', (req, res) => {
       VALUES (?, ?, ?)
     `);
 
-    const result = stmt.run(group_buy_id, user_id, content.trim());
+    const result = stmt.run(group_buy_id, user_id, sanitizedContent);
 
     const message = db.prepare(`
       SELECT m.*, u.nickname as user_name, u.avatar as user_avatar
@@ -74,7 +96,8 @@ router.post('/', (req, res) => {
 
     res.json(message);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Send message error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 

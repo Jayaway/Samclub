@@ -1,7 +1,7 @@
 const API_BASE = '/api';
 
-// Types matching backend API
-export interface User {
+// ============ 后端API类型定义（仅API层使用）============
+export interface ApiUser {
   id: number;
   student_id: string;
   nickname: string;
@@ -10,23 +10,25 @@ export interface User {
   credit_score: number;
 }
 
-export interface Product {
+export interface ApiProduct {
   id: number;
   group_buy_id: number;
   name: string;
   original_price: number;
-  quantity: number; // 整份数量
+  quantity: number;
   remaining_quantity: number;
-  allow_split: boolean;
+  allow_split: number;
   split_unit: string;
   split_quantity_per_whole: number;
   split_price_per_unit: number;
   self_retain_quantity: number;
-  needs_cold_chain: boolean;
+  needs_cold_chain: number;
   unit_price: number;
+  product_type: string;
+  split_remaining_quantity?: number;
 }
 
-export interface OrderItem {
+export interface ApiOrderItem {
   id: number;
   group_buy_id: number;
   user_id: number;
@@ -35,13 +37,13 @@ export interface OrderItem {
   subtotal: number;
   purchase_type?: 'whole' | 'split';
   product_name?: string;
-  needs_cold_chain?: boolean;
+  needs_cold_chain?: number;
   user_name?: string;
   split_remaining_quantity?: number;
-  allow_split?: boolean;
+  allow_split?: number;
 }
 
-export interface CostDetail {
+export interface ApiCostDetail {
   id: number;
   group_buy_id: number;
   user_id: number;
@@ -53,7 +55,7 @@ export interface CostDetail {
   user_name?: string;
 }
 
-export interface GroupBuy {
+export interface ApiGroupBuy {
   id: number;
   creator_id: number;
   title: string;
@@ -66,14 +68,18 @@ export interface GroupBuy {
   member_count?: number;
   needs_cold_chain?: boolean;
   progress?: number;
-  products?: Product[];
-  orderItems?: OrderItem[];
-  costDetails?: CostDetail[];
+  total_cost?: number;
+  delivery_mode?: string;
+  products?: ApiProduct[];
+  orderItems?: ApiOrderItem[];
+  costDetails?: ApiCostDetail[];
   members?: { id: number; nickname: string; avatar: string }[];
+  payment_remark?: string;
+  delivered_at?: string;
 }
 
 export interface CostDetailsResponse {
-  costDetails: CostDetail[];
+  costDetails: ApiCostDetail[];
   totalCost: number;
   mode: string;
   needs_cold_chain: boolean;
@@ -83,187 +89,12 @@ export interface CostDetailsResponse {
   reward: number;
 }
 
-// Auth
-export async function login(studentId: string): Promise<User> {
-  const res = await fetch(`${API_BASE}/users/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ student_id: studentId }),
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.error || '登录失败');
-  }
-  return res.json();
-}
-
-export async function register(studentId: string, nickname: string, dormBuilding: string = '', phone?: string, avatar?: string): Promise<User> {
-  const res = await fetch(`${API_BASE}/users/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      student_id: studentId,
-      nickname,
-      dorm_building: dormBuilding,
-      phone,
-      avatar,
-    }),
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.error || '注册失败');
-  }
-  return res.json();
-}
-
-export async function getCurrentUser(): Promise<User | null> {
-  const userId = localStorage.getItem('userId');
-  if (!userId) return null;
-  const res = await fetch(`${API_BASE}/users/me`, {
-    headers: { 'x-user-id': userId },
-  });
-  if (!res.ok) return null;
-  return res.json();
-}
-
-// Group Buys
-export async function fetchGroupBuys(status?: string): Promise<GroupBuy[]> {
-  const params = status ? `?status=${status}` : '';
-  const res = await fetch(`${API_BASE}/group-buys${params}`);
-  return res.json();
-}
-
-export async function fetchGroupBuyById(id: number): Promise<GroupBuy> {
-  const res = await fetch(`${API_BASE}/group-buys/${id}`);
-  if (!res.ok) throw new Error('拼单不存在');
-  return res.json();
-}
-
 export interface PaymentInfo {
   payment_remark: string;
   qr_code_url: string;
   leader_name: string;
   leader_avatar: string;
   total_amount: number;
-}
-
-export async function fetchPaymentInfo(groupId: number): Promise<PaymentInfo> {
-  const res = await fetch(`${API_BASE}/group-buys/${groupId}/payment-info`);
-  if (!res.ok) throw new Error('获取收款信息失败');
-  return res.json();
-}
-
-export async function createGroupBuy(data: {
-  creator_id: number;
-  title: string;
-  deadline: string;
-  pickup_location: string;
-  products: Omit<Product, 'id' | 'group_buy_id'>[];
-}): Promise<GroupBuy> {
-  const res = await fetch(`${API_BASE}/group-buys`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.error || '创建失败');
-  }
-  return res.json();
-}
-
-export async function updateGroupBuyStatus(id: number, status: string): Promise<GroupBuy> {
-  const res = await fetch(`${API_BASE}/group-buys/${id}/status`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status }),
-  });
-  return res.json();
-}
-
-export async function deleteGroupBuy(id: number): Promise<void> {
-  await fetch(`${API_BASE}/group-buys/${id}`, { method: 'DELETE' });
-}
-
-export async function checkDuplicateGroupBuy(keyword: string, deadline: string): Promise<{ similar: { id: number; title: string; deadline: string }[] }> {
-  const params = new URLSearchParams({ check_keyword: keyword, check_deadline: deadline });
-  const res = await fetch(`${API_BASE}/group-buys?${params}`);
-  return res.json();
-}
-
-// Order Items
-export async function fetchMyOrders(userId: number, groupBuyId: number): Promise<OrderItem[]> {
-  const res = await fetch(`${API_BASE}/order-items/user/${userId}/group/${groupBuyId}`);
-  return res.json();
-}
-
-export async function addOrderItem(data: {
-  group_buy_id: number;
-  user_id: number;
-  product_id: number;
-  quantity: number;
-  purchase_type?: 'whole' | 'split';
-}): Promise<OrderItem> {
-  const res = await fetch(`${API_BASE}/order-items`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || '添加失败');
-  }
-  return res.json();
-}
-
-export async function removeOrderItem(id: number): Promise<void> {
-  await fetch(`${API_BASE}/order-items/${id}`, { method: 'DELETE' });
-}
-
-// Cost Details
-export async function fetchCostDetails(groupBuyId: number): Promise<CostDetailsResponse> {
-  const res = await fetch(`${API_BASE}/group-buys/${groupBuyId}/cost-details`);
-  return res.json();
-}
-
-// Member exits group buy
-export async function exitGroupBuy(groupBuyId: number, userId: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/group-buys/${groupBuyId}/members/me`, {
-    method: 'DELETE',
-    headers: { 'x-user-id': String(userId) },
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.error || '退出失败');
-  }
-}
-
-// Creator adds products to existing group buy (triggers cost recalculation)
-export async function addProductsToGroupBuy(groupBuyId: number, products: Omit<Product, 'id' | 'group_buy_id'>[]): Promise<GroupBuy> {
-  const res = await fetch(`${API_BASE}/group-buys/${groupBuyId}/products`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ products }),
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.error || '添加商品失败');
-  }
-  return res.json();
-}
-
-// Payments
-export async function submitPayment(data: {
-  group_buy_id: number;
-  user_id: number;
-  amount: number;
-  proof_image?: string;
-}): Promise<void> {
-  await fetch(`${API_BASE}/payments`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
 }
 
 export interface PaymentProgressMember {
@@ -285,28 +116,6 @@ export interface PaymentProgress {
   members: PaymentProgressMember[];
 }
 
-export async function fetchPaymentProgress(groupId: number): Promise<PaymentProgress> {
-  const res = await fetch(`${API_BASE}/group-buys/${groupId}/payment-progress`);
-  if (!res.ok) throw new Error('获取收款进度失败');
-  return res.json();
-}
-
-export async function confirmPayment(paymentId: number, status: '已确认' | '已拒绝'): Promise<void> {
-  await fetch(`${API_BASE}/payments/${paymentId}/confirm`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status }),
-  });
-}
-
-export async function batchConfirmPayments(paymentIds: number[], status: '已确认' | '已拒绝'): Promise<void> {
-  await fetch(`${API_BASE}/payments/batch-confirm`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ payment_ids: paymentIds, status }),
-  });
-}
-
 export interface PaymentRecord {
   id: number;
   group_buy_id: number;
@@ -317,12 +126,12 @@ export interface PaymentRecord {
   user_avatar?: string;
 }
 
-export async function fetchPaymentsByGroup(groupId: number): Promise<PaymentRecord[]> {
-  const res = await fetch(`${API_BASE}/payments/group/${groupId}`);
-  return res.json();
+export interface AlipayPayResult {
+  payment_url: string;
+  out_trade_no: string;
+  device: 'mobile' | 'pc';
 }
 
-// Messages
 export interface Message {
   id: number;
   group_buy_id: number;
@@ -333,31 +142,292 @@ export interface Message {
   user_avatar: string;
 }
 
-export async function fetchMessages(groupId: number): Promise<Message[]> {
-  const res = await fetch(`${API_BASE}/messages/${groupId}`);
-  return res.json();
+// ============ Token 管理 ============
+export function getToken(): string | null {
+  return localStorage.getItem('token');
 }
 
-export async function sendMessage(groupId: number, userId: number, content: string): Promise<Message> {
-  const res = await fetch(`${API_BASE}/messages`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ group_buy_id: groupId, user_id: userId, content }),
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.error || '发送留言失败');
+export function setToken(token: string): void {
+  localStorage.setItem('token', 'Bearer ' + token);
+}
+
+export function clearToken(): void {
+  localStorage.removeItem('token');
+}
+
+// ============ 统一HTTP客户端 ============
+const DEFAULT_TIMEOUT = 10000;
+
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  timeout: number = DEFAULT_TIMEOUT
+): Promise<T> {
+  const token = localStorage.getItem('token');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> || {}),
+  };
+
+  if (token) {
+    headers['Authorization'] = 'Bearer ' + token.replace('Bearer ', '');
   }
-  return res.json();
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      let errorMsg = '请求失败';
+      try {
+        const errorData = await res.json();
+        errorMsg = errorData.error || errorMsg;
+      } catch { /* ignore parse error */ }
+
+      if (res.status === 401) {
+        clearToken();
+        clearUser();
+        window.location.reload();
+      }
+
+      throw new Error(errorMsg);
+    }
+
+    return res.json();
+  } catch (err: unknown) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('请求超时，请检查网络');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
-// Local storage helpers
-export function saveUser(user: User): void {
+// ============ Auth API ============
+// 发送验证码
+export async function sendVerificationCode(phone: string): Promise<{ success: boolean; message: string; code?: string }> {
+  return request('/users/send-code', {
+    method: 'POST',
+    body: JSON.stringify({ phone }),
+  });
+}
+
+// 登录（学号直接登录）
+export async function login(studentId: string): Promise<{ token: string; user: ApiUser }> {
+  return request('/users/login', {
+    method: 'POST',
+    body: JSON.stringify({ student_id: studentId }),
+  });
+}
+
+// 注册（手机号选填，填了需要验证码）
+export async function register(
+  studentId: string, 
+  nickname: string, 
+  dormBuilding: string = '', 
+  phone?: string, 
+  code?: string, 
+  avatar?: string
+): Promise<{ token: string; user: ApiUser }> {
+  return request('/users/register', {
+    method: 'POST',
+    body: JSON.stringify({
+      student_id: studentId,
+      nickname,
+      dorm_building: dormBuilding,
+      phone: phone || undefined,
+      code: code || undefined,
+      avatar,
+    }),
+  });
+}
+
+export async function getCurrentUser(): Promise<ApiUser | null> {
+  const token = getToken();
+  if (!token) return null;
+  try {
+    return await request<ApiUser>('/users/me');
+  } catch {
+    return null;
+  }
+}
+
+// ============ Group Buys API ============
+export async function fetchGroupBuys(status?: string): Promise<ApiGroupBuy[]> {
+  const params = status ? `?status=${status}` : '';
+  return request('/group-buys' + params);
+}
+
+export async function fetchJoinedGroupBuys(userId: number): Promise<ApiGroupBuy[]> {
+  return request(`/group-buys/user/${userId}/joined`);
+}
+
+export async function fetchGroupBuyById(id: number): Promise<ApiGroupBuy> {
+  return request(`/group-buys/${id}`);
+}
+
+export async function fetchPaymentInfo(groupId: number): Promise<PaymentInfo> {
+  return request(`/group-buys/${groupId}/payment-info`);
+}
+
+export async function createGroupBuy(data: {
+  creator_id: number;
+  title: string;
+  deadline: string;
+  pickup_location: string;
+  products: Omit<ApiProduct, 'id' | 'group_buy_id'>[];
+}): Promise<ApiGroupBuy> {
+  return request('/group-buys', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateGroupBuyStatus(id: number, status: string): Promise<ApiGroupBuy> {
+  return request(`/group-buys/${id}/status`, {
+    method: 'PUT',
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function deleteGroupBuy(id: number): Promise<void> {
+  await request(`/group-buys/${id}`, { method: 'DELETE' });
+}
+
+export async function checkDuplicateGroupBuy(keyword: string, deadline: string): Promise<{ similar: { id: number; title: string; deadline: string }[] }> {
+  const params = new URLSearchParams({ check_keyword: keyword, check_deadline: deadline });
+  return request('/group-buys?' + params.toString());
+}
+
+// ============ Order Items API ============
+export async function fetchMyOrders(userId: number, groupBuyId: number): Promise<ApiOrderItem[]> {
+  return request(`/order-items/user/${userId}/group/${groupBuyId}`);
+}
+
+export async function addOrderItem(data: {
+  group_buy_id: number;
+  user_id: number;
+  product_id: number;
+  quantity: number;
+  purchase_type?: 'whole' | 'split';
+}): Promise<ApiOrderItem> {
+  return request('/order-items', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function removeOrderItem(id: number): Promise<void> {
+  await request(`/order-items/${id}`, { method: 'DELETE' });
+}
+
+// ============ Cost Details API ============
+export async function fetchCostDetails(groupBuyId: number): Promise<CostDetailsResponse> {
+  return request(`/group-buys/${groupBuyId}/cost-details`);
+}
+
+// ============ Member Exit API ============
+export async function exitGroupBuy(groupBuyId: number): Promise<{ success: boolean; message: string }> {
+  return request(`/group-buys/${groupBuyId}/members/me`, {
+    method: 'DELETE',
+  });
+}
+
+// ============ Add Products API ============
+export async function addProductsToGroupBuy(groupBuyId: number, products: Omit<ApiProduct, 'id' | 'group_buy_id'>[]): Promise<{ success: boolean; modeSwitch: boolean; modeSwitchWarning: string | null; newTotalAmount: number; newMode: string }> {
+  return request(`/group-buys/${groupBuyId}/products`, {
+    method: 'POST',
+    body: JSON.stringify({ products }),
+  });
+}
+
+// ============ Payments API ============
+export async function submitPayment(data: {
+  group_buy_id: number;
+  user_id: number;
+  amount: number;
+  proof_image?: string;
+}): Promise<void> {
+  await request('/payments', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchPaymentProgress(groupId: number): Promise<PaymentProgress> {
+  return request(`/group-buys/${groupId}/payment-progress`);
+}
+
+export async function confirmPayment(paymentId: number, status: '已确认' | '已拒绝'): Promise<void> {
+  await request(`/payments/${paymentId}/confirm`, {
+    method: 'PUT',
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function batchConfirmPayments(paymentIds: number[], status: '已确认' | '已拒绝'): Promise<{ success: boolean; updated: number }> {
+  return request('/payments/batch-confirm', {
+    method: 'POST',
+    body: JSON.stringify({ payment_ids: paymentIds, status }),
+  });
+}
+
+export async function fetchPaymentsByGroup(groupId: number): Promise<PaymentRecord[]> {
+  return request(`/payments/group/${groupId}`);
+}
+
+// ============ Alipay API ============
+export async function alipayPay(data: {
+  group_buy_id: number;
+  user_id: number;
+  amount: number;
+  device?: 'auto' | 'mobile' | 'pc';
+}): Promise<AlipayPayResult> {
+  return request('/alipay/pay', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchAlipayStatus(outTradeNo: string): Promise<{
+  out_trade_no: string;
+  status: string;
+  trade_no: string;
+  amount: number;
+}> {
+  return request(`/alipay/status/${outTradeNo}`);
+}
+
+// ============ Messages API ============
+export async function fetchMessages(groupId: number, page?: number, limit?: number): Promise<Message[]> {
+  const params = new URLSearchParams();
+  if (page) params.set('page', String(page));
+  if (limit) params.set('limit', String(limit));
+  const qs = params.toString();
+  return request(`/messages/${groupId}${qs ? '?' + qs : ''}`);
+}
+
+export async function sendMessage(groupId: number, content: string): Promise<Message> {
+  return request('/messages', {
+    method: 'POST',
+    body: JSON.stringify({ group_buy_id: groupId, content }),
+  });
+}
+
+// ============ Local Storage Helpers ============
+export function saveUser(user: ApiUser): void {
   localStorage.setItem('userId', user.id.toString());
   localStorage.setItem('user', JSON.stringify(user));
 }
 
-export function getUser(): User | null {
+export function getUser(): ApiUser | null {
   const userStr = localStorage.getItem('user');
   if (!userStr) return null;
   try {

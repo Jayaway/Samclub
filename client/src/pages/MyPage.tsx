@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ShoppingBag, Clock, Users, CheckCircle, XCircle, ChevronRight } from 'lucide-react';
+import { ArrowLeft, ShoppingBag, Clock, Users, CheckCircle, XCircle, ChevronRight, Grid2x2 } from 'lucide-react';
 import { springConfig, springBouncy, springSnappy } from '../utils/animations';
-import { fetchGroupBuys } from '../utils/api';
+import { fetchGroupBuys, fetchJoinedGroupBuys } from '../utils/api';
 import { GroupBuy } from '../types';
 
 interface MyPageProps {
@@ -29,8 +29,11 @@ export default function MyPage({ userId, onBack, onNavigate }: MyPageProps) {
   useEffect(() => {
     async function loadMyGroups() {
       try {
-        const groups = await fetchGroupBuys();
-        const myCreated = groups
+        const [allGroups, joinedGroups] = await Promise.all([
+          fetchGroupBuys(),
+          fetchJoinedGroupBuys(userId),
+        ]);
+        const myCreated = allGroups
           .filter((g: any) => g.creator_id === userId)
           .map((g: any) => ({
             id: g.id,
@@ -40,8 +43,7 @@ export default function MyPage({ userId, onBack, onNavigate }: MyPageProps) {
             total_cost: g.total_amount || 0,
             isCreator: true,
           }));
-        const myJoined = groups
-          .filter((g: any) => g.creator_id !== userId && g.members?.some((m: any) => m.user_id === userId))
+        const myJoined = joinedGroups
           .map((g: any) => ({
             id: g.id,
             title: g.title,
@@ -92,9 +94,14 @@ export default function MyPage({ userId, onBack, onNavigate }: MyPageProps) {
           <ArrowLeft size={18} />
         </motion.button>
         <h1 className="text-[#0c0c0c] font-black text-lg flex-1">我的拼单</h1>
-        <div className="w-9 h-9 rounded-xl bg-zinc-100 flex items-center justify-center text-zinc-600">
-          <ShoppingBag size={18} />
-        </div>
+        <motion.button
+          onClick={() => onNavigate('square')}
+          whileTap={{ scale: 0.9 }}
+          transition={springSnappy}
+          className="w-9 h-9 rounded-xl bg-zinc-100 flex items-center justify-center text-zinc-600"
+        >
+          <Grid2x2 size={18} />
+        </motion.button>
       </motion.div>
 
       {/* Tabs */}

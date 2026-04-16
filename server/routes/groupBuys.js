@@ -2,11 +2,21 @@ import { Router } from 'express';
 import db from '../db.js';
 import { calculateTotalCost, calculateCostShare, hasColdChainItem, leaderDiscountApplies } from '../utils/calculator.js';
 import config from '../config.js';
+import { auth, optionalAuth, requireCreator } from '../middleware/auth.js';
+import { escapeLike } from '../middleware/validate.js';
 
 const router = Router();
 
+// 状态机校验：定义合法的状态转换
+const VALID_TRANSITIONS = {
+  '拼单中': ['待付款', '已取消'],
+  '待付款': ['已下单', '已取消'],
+  '已下单': ['已送达'],
+  '已送达': ['已完成'],
+};
+
 // 获取拼单列表（支持相似商品重复检查）
-router.get('/', (req, res) => {
+router.get('/', optionalAuth, (req, res) => {
   try {
     const { status, check_keyword, check_deadline } = req.query;
 
@@ -17,15 +27,18 @@ router.get('/', (req, res) => {
       const minDeadline = new Date(deadlineMs - oneHour).toISOString();
       const maxDeadline = new Date(deadlineMs + oneHour).toISOString();
 
+      // 使用 escapeLike 转义 LIKE 通配符
+      const escapedKeyword = escapeLike(check_keyword);
+
       const similars = db.prepare(`
         SELECT gb.id, gb.title, gb.deadline
         FROM group_buys gb
         JOIN products p ON p.group_buy_id = gb.id
         WHERE gb.status IN ('拼单中', '待付款')
           AND gb.deadline BETWEEN ? AND ?
-          AND (p.name LIKE ? OR gb.title LIKE ?)
+          AND (p.name LIKE ? ESCAPE '\\' OR gb.title LIKE ? ESCAPE '\\')
         GROUP BY gb.id
-      `).all(minDeadline, maxDeadline, `%${check_keyword}%`, `%${check_keyword}%`);
+      `).all(minDeadline, maxDeadline, `%${escapedKeyword}%`, `%${escapedKeyword}%`);
 
       return res.json({ similar: similars });
     }
@@ -70,7 +83,8 @@ router.get('/', (req, res) => {
 
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Get group buys error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
@@ -134,7 +148,8 @@ router.get('/:id', (req, res) => {
       ...costInfo
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Get group buy detail error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
@@ -161,16 +176,60 @@ router.get('/:id/payment-info', (req, res) => {
       total_amount: totalAmount,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Get payment info error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
+// 获取用户参与的拼单（通过 order_items 关联）
+router.get('/user/:userId/joined', (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const rows = db.prepare(`
+      SELECT DISTINCT gb.*, u.nickname as leader_name, u.avatar as leader_avatar,
+        (SELECT COUNT(DISTINCT user_id) FROM order_items WHERE group_buy_id = gb.id) as member_count
+      FROM group_buys gb
+      JOIN users u ON gb.creator_id = u.id
+      JOIN order_items oi ON gb.id = oi.group_buy_id
+      WHERE oi.user_id = ? AND gb.creator_id != ?
+      ORDER BY gb.created_at DESC
+    `).all(userId, userId);
+
+    const result = rows.map(gb => {
+      const totalAmount = db.prepare(`
+        SELECT COALESCE(SUM(subtotal), 0) as total
+        FROM order_items WHERE group_buy_id = ?
+      `).get(gb.id).total;
+
+      const products = db.prepare('SELECT * FROM products WHERE group_buy_id = ?').all(gb.id);
+      const needsColdChain = hasColdChainItem(products);
+      const costInfo = calculateTotalCost(totalAmount, needsColdChain);
+
+      return {
+        ...gb,
+        total_amount: totalAmount,
+        delivery_mode: costInfo.mode,
+        needs_cold_chain: needsColdChain,
+        total_cost: costInfo.totalCost,
+        progress: Math.min(100, Math.round((totalAmount / 99) * 100))
+      };
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Get joined group buys error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
 // 创建拼单
-router.post('/', (req, res) => {
+router.post('/', auth, (req, res) => {
   try {
-    const { creator_id, title, deadline, pickup_location, products } = req.body;
+    const { title, deadline, pickup_location, products } = req.body;
+    const creator_id = req.user.userId;
 
-    if (!creator_id || !title || !deadline) {
+    if (!title || !deadline) {
       return res.status(400).json({ error: '缺少必填字段' });
     }
 
@@ -247,7 +306,7 @@ router.post('/', (req, res) => {
             message: `【管理员预警】拼单"${title}"（ID:${groupBuyId}）商品总金额¥${totalAmount}超过${config.freightWarningThreshold}元，且含有酒水/饮料类商品（${matchedProducts.map(p => p.name).join('、')}），请关注运费计算`
           };
           // 输出到控制台（生产环境可替换为邮件/钉钉通知）
-          console.warn('🚨 管理员运费预警:', JSON.stringify(warning, null, 2));
+          console.warn('管理员运费预警:', JSON.stringify(warning, null, 2));
 
           // 这里可以添加实际的通知逻辑，如：
           // await sendAdminNotification(warning);
@@ -258,12 +317,13 @@ router.post('/', (req, res) => {
     const groupBuy = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(groupBuyId);
     res.json(groupBuy);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Create group buy error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
 // 管理员：查看拼单收款进度
-router.get('/:id/payment-progress', (req, res) => {
+router.get('/:id/payment-progress', auth, (req, res) => {
   try {
     const { id } = req.params;
 
@@ -290,10 +350,10 @@ router.get('/:id/payment-progress', (req, res) => {
       WHERE p.group_buy_id = ?
     `).all(id);
 
-    const paymentMap: Record<number, any> = {};
-    payments.forEach((p: any) => { paymentMap[p.user_id] = p; });
+    const paymentMap = {};
+    payments.forEach((p) => { paymentMap[p.user_id] = p; });
 
-    const members = costDetails.map((cd: any) => ({
+    const members = costDetails.map((cd) => ({
       user_id: cd.user_id,
       user_name: cd.user_name,
       user_avatar: cd.user_avatar,
@@ -303,7 +363,7 @@ router.get('/:id/payment-progress', (req, res) => {
       paid_at: paymentMap[cd.user_id]?.created_at || null,
     }));
 
-    const allPaid = members.length > 0 && members.every((m: any) => m.paid);
+    const allPaid = members.length > 0 && members.every((m) => m.paid);
 
     res.json({
       group_buy_id: Number(id),
@@ -314,12 +374,13 @@ router.get('/:id/payment-progress', (req, res) => {
       members,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Get payment progress error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
 // 更新拼单状态
-router.put('/:id/status', (req, res) => {
+router.put('/:id/status', auth, requireCreator, (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -327,6 +388,14 @@ router.put('/:id/status', (req, res) => {
     const gb = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(id);
     if (!gb) {
       return res.status(404).json({ error: '拼单不存在' });
+    }
+
+    // 状态机校验：检查状态转换是否合法
+    const allowedTransitions = VALID_TRANSITIONS[gb.status];
+    if (!allowedTransitions || !allowedTransitions.includes(status)) {
+      return res.status(400).json({
+        error: `不允许从"${gb.status}"变更为"${status}"，当前状态可变更为: ${allowedTransitions?.join('、') || '无'}`
+      });
     }
 
     // 标记为"已送达"时记录时间，用于7天自动完成
@@ -339,32 +408,38 @@ router.put('/:id/status', (req, res) => {
     // 状态变更为"已下单"时，通知管理员
     if (status === '已下单' && gb.status !== '已下单') {
       const groupBuy = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(id);
-      console.log(`📦 [通知] 拼单"${groupBuy.title}"(ID:${id})已收齐款项，请前往山姆下单`);
+      console.log(`[通知] 拼单"${groupBuy.title}"(ID:${id})已收齐款项，请前往山姆下单`);
       // TODO: 接入钉钉机器人webhook或邮件通知
     }
 
     const groupBuy = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(id);
     res.json(groupBuy);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Update group buy status error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
 // 删除拼单
-router.delete('/:id', (req, res) => {
+router.delete('/:id', auth, requireCreator, (req, res) => {
   try {
     const { id } = req.params;
 
-    // 删除关联数据
-    db.prepare('DELETE FROM order_items WHERE group_buy_id = ?').run(id);
-    db.prepare('DELETE FROM cost_details WHERE group_buy_id = ?').run(id);
-    db.prepare('DELETE FROM payments WHERE group_buy_id = ?').run(id);
-    db.prepare('DELETE FROM products WHERE group_buy_id = ?').run(id);
-    db.prepare('DELETE FROM group_buys WHERE id = ?').run(id);
+    // 使用事务包裹删除操作，保证原子性
+    const deleteTransaction = db.transaction(() => {
+      db.prepare('DELETE FROM order_items WHERE group_buy_id = ?').run(id);
+      db.prepare('DELETE FROM cost_details WHERE group_buy_id = ?').run(id);
+      db.prepare('DELETE FROM payments WHERE group_buy_id = ?').run(id);
+      db.prepare('DELETE FROM products WHERE group_buy_id = ?').run(id);
+      db.prepare('DELETE FROM group_buys WHERE id = ?').run(id);
+    });
+
+    deleteTransaction();
 
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Delete group buy error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
@@ -459,19 +534,16 @@ router.get('/:id/cost-details', (req, res) => {
       reward: costInfo.reward
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Get cost details error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
 // 成员主动退出拼单
-router.delete('/:id/members/me', (req, res) => {
+router.delete('/:id/members/me', auth, (req, res) => {
   try {
     const { id } = req.params;
-    const user_id = req.headers['x-user-id'];
-
-    if (!user_id) {
-      return res.status(401).json({ error: '未登录' });
-    }
+    const user_id = req.user.userId;
 
     const gb = db.prepare('SELECT * FROM group_buys WHERE id = ?').get(id);
     if (!gb) {
@@ -502,12 +574,13 @@ router.delete('/:id/members/me', (req, res) => {
 
     res.json({ success: true, message: '已退出拼单，费用已重新计算' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Leave group buy error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
 // 发起人增加商品（仅限"拼单中"状态）
-router.post('/:id/products', (req, res) => {
+router.post('/:id/products', auth, requireCreator, (req, res) => {
   try {
     const { id } = req.params;
     const { products } = req.body;
@@ -589,7 +662,8 @@ router.post('/:id/products', (req, res) => {
       newMode: newCostInfo.mode
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Add products error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
@@ -642,7 +716,7 @@ function recalculateCosts(groupBuyId) {
 }
 
 // 管理员确认送达，通知所有成员取货
-router.post('/:id/delivered', (req, res) => {
+router.post('/:id/delivered', auth, (req, res) => {
   try {
     const { id } = req.params;
 
@@ -650,6 +724,9 @@ router.post('/:id/delivered', (req, res) => {
     if (!gb) {
       return res.status(404).json({ error: '拼单不存在' });
     }
+
+    // 同时更新状态和送达时间
+    db.prepare('UPDATE group_buys SET status = \'已送达\', delivered_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
 
     // 获取所有参与成员的手机号（预留短信通知）
     const members = db.prepare(`
@@ -659,18 +736,19 @@ router.post('/:id/delivered', (req, res) => {
       WHERE oi.group_buy_id = ?
     `).all(id);
 
-    members.forEach((m: any) => {
+    members.forEach((m) => {
       if (m.phone) {
         // TODO: 调用短信服务发送取货通知
-        console.log(`📱 [短信通知] ${m.phone}: 您的拼单"${gb.title}"已送达，请前往${gb.pickup_location}取货`);
+        console.log(`[短信通知] ${m.phone}: 您的拼单"${gb.title}"已送达，请前往${gb.pickup_location}取货`);
       } else {
-        console.log(`📦 [站内通知] 用户${m.nickname}的拼单"${gb.title}"已送达，请前往${gb.pickup_location}取货`);
+        console.log(`[站内通知] 用户${m.nickname}的拼单"${gb.title}"已送达，请前往${gb.pickup_location}取货`);
       }
     });
 
     res.json({ success: true, message: `已通知${members.length}位成员` });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Delivered notification error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 

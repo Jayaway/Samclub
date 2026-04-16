@@ -1,14 +1,16 @@
 import { Router } from 'express';
 import db from '../db.js';
+import { auth } from '../middleware/auth.js';
 
 const router = Router();
 
 // 上传付款凭证
-router.post('/', (req, res) => {
+router.post('/', auth, (req, res) => {
   try {
-    const { group_buy_id, user_id, amount, proof_image } = req.body;
+    const { group_buy_id, amount, proof_image } = req.body;
+    const user_id = req.user.userId;
 
-    if (!group_buy_id || !user_id || !amount) {
+    if (!group_buy_id || !amount) {
       return res.status(400).json({ error: '缺少必填字段' });
     }
 
@@ -41,12 +43,13 @@ router.post('/', (req, res) => {
 
     res.json(payment);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Upload payment proof error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
 // 团长确认付款
-router.put('/:id/confirm', (req, res) => {
+router.put('/:id/confirm', auth, (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body; // '已确认' 或 '已拒绝'
@@ -54,6 +57,12 @@ router.put('/:id/confirm', (req, res) => {
     const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(id);
     if (!payment) {
       return res.status(404).json({ error: '付款记录不存在' });
+    }
+
+    // 验证操作者是拼单的团长
+    const gb = db.prepare('SELECT creator_id FROM group_buys WHERE id = ?').get(payment.group_buy_id);
+    if (!gb || req.user.userId !== gb.creator_id) {
+      return res.status(403).json({ error: '只有团长才能确认付款' });
     }
 
     db.prepare(`
@@ -70,17 +79,29 @@ router.put('/:id/confirm', (req, res) => {
     const updated = db.prepare('SELECT * FROM payments WHERE id = ?').get(id);
     res.json(updated);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Confirm payment error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
 // 批量确认付款
-router.post('/batch-confirm', (req, res) => {
+router.post('/batch-confirm', auth, (req, res) => {
   try {
     const { payment_ids, status } = req.body;
 
     if (!payment_ids || !Array.isArray(payment_ids)) {
       return res.status(400).json({ error: 'payment_ids 必须是数组' });
+    }
+
+    // 限制最多50条
+    if (payment_ids.length > 50) {
+      return res.status(400).json({ error: '单次批量操作最多50条' });
+    }
+
+    // 状态白名单校验
+    const VALID_STATUSES = ['已确认', '已拒绝'];
+    if (!VALID_STATUSES.includes(status)) {
+      return res.status(400).json({ error: `状态值无效，允许值: ${VALID_STATUSES.join('、')}` });
     }
 
     const updateStmt = db.prepare(`
@@ -105,7 +126,8 @@ router.post('/batch-confirm', (req, res) => {
 
     res.json({ success: true, updated: results.length });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Batch confirm payment error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
@@ -127,7 +149,8 @@ router.get('/', (req, res) => {
 
     res.json(payments);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Get payments error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
@@ -145,7 +168,8 @@ router.get('/group/:groupBuyId', (req, res) => {
 
     res.json(payments);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Get group payments error:', error);
+    res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
